@@ -1,0 +1,13 @@
+# Idle Obelisk Miner Bot - Python dependencies
+# tested with py 3.10+
+opencv-python
+flask>=3.0
+flask-socketio>=5.3
+pystray
+pillow
+pywin32
+
+# py -m pip install "flask>=3.0" "flask-socketio>=5.3" pystray pillow pywin32 opencv-python
+#
+# runs with py 3.13 and higher:
+# pip install --force-reinstall flask==3.1.0 flask-socketio==5.5.1 python-socketio==5.12.1 python-engineio==4.11.2 werkzeug==3.1.3 opencv-python
