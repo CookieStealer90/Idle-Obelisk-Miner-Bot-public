@@ -52,7 +52,7 @@ Maybe it will be released in the future — maybe not. Try to ask me ;)
 - **Web Dashboard** (Flask + Socket.IO): control the bot from your PC browser **or your phone/tablet on the same WiFi**
 - **Live log stream** in the WebUI + `bot.log` on disk
 - **Last screenshot** viewer in the WebUI
-- **Workflows**: workflows (e.g. fire bombs on golden floor, swipes, taps) + full WebUI workflow editor you can automate neary EVERYTHING ingame
+- **Workflows**: workflows (e.g. fire bombs on golden floor, auto prestige, auto craft, swipes, taps) + full WebUI workflow editor you can automate neary EVERYTHING ingame if you want to do this
 - Pure **ADB input + screenshots** driven (no root, no overlays)
 - Template matching via **OpenCV** (ROI-based for speed & stability), no OCR
 - **ADB auto-connect** with port scanning and multi-instance fallback
