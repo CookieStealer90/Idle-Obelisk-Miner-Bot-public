@@ -23,8 +23,8 @@
 
 THIS PROJECT IS NOT RELEASED.  
 It is a showcase of my development work only – used only by me and some friends.
-
-Maybe it will be released in the future — maybe not.
+!!!THE CODE IS NOT PUBLIC!!!
+Maybe it will be released in the future — maybe not. Try to ask me ;)
 
 ---
 
