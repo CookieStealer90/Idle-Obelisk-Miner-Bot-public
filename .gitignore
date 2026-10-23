@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.pyc
+
+# Claude
+.claude/
+CLAUDE.md
+
+#ps logo
+*.psd
+
+# json custom config
+*.json
+
+# Logs
+*.log*
+*.rar
+
+
+# temp images
+temp/
+*_scr.png
+user_workflows.py.txt
+
+# Temp files
+*.tmp
+*.bak
+*.old
+To-do and maybes.txt
+
+# IDE
+.vscode/
+.idea/
+
+# Environment files
+.env
+
+# OS
+Thumbs.db
+.DS_Store
+
+#ssl
+.pem
