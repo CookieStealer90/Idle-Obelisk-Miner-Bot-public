@@ -9,6 +9,7 @@ import time
 import socket
 import threading
 import subprocess
+from io import BytesIO
 from pathlib import Path
 from datetime import datetime
 from queue import Queue
@@ -16,7 +17,8 @@ from queue import Queue
 from flask import Flask, render_template, request, jsonify, send_file
 from flask_socketio import SocketIO
 
-from web.security import enforce_dashboard_access_policy, check_socketio_access
+from web.security import enforce_dashboard_access_policy, check_socketio_access, socketio_origin_allowed
+from web.secret_key import load_or_create_secret_key
 from web.state_builder import build_state_dict
 from web.config_api import config_bp
 
@@ -27,9 +29,9 @@ app = Flask(
     template_folder=str(BASE_DIR / "web" / "templates"),
     static_folder=str(BASE_DIR / "web" / "static"),
 )
-app.config["SECRET_KEY"] = "obelisk-bot-secret"
+app.config["SECRET_KEY"] = load_or_create_secret_key(BASE_DIR / "config" / "web_secret.json")
 
-socketio = SocketIO(app, async_mode="threading", cors_allowed_origins="*")
+socketio = SocketIO(app, async_mode="threading", cors_allowed_origins=socketio_origin_allowed)
 
 app.register_blueprint(config_bp)
 
@@ -145,13 +147,13 @@ def api_restart():
 def api_screenshot():
     """Serve the newest allowed screenshot from ./temp/."""
     from config import settings as s
-    temp_dir = BASE_DIR / "temp"
+    from core.screen_cache import latest_cached_png
     allowed = getattr(s, "SCREENSHOT_VIEWER_FILES", ["game_scr.png", "freebie_scr.png"])
-    candidates = [temp_dir / fname for fname in allowed if (temp_dir / fname).is_file()]
-    if not candidates:
+    data, filename = latest_cached_png(allowed)
+    if data is None:
         return jsonify({"error": "no screenshot"}), 404
-    newest = max(candidates, key=lambda p: p.stat().st_mtime)
-    return send_file(str(newest), mimetype="image/png")
+    return send_file(BytesIO(data), mimetype="image/png", download_name=filename,
+                     max_age=0)
 
 
 # ============ LOG FILTER SYNC ============
@@ -184,6 +186,8 @@ def on_connect():
 
 @socketio.on("command")
 def on_command(data):
+    if not check_socketio_access():
+        return
     cmd = data.get("cmd", "") if isinstance(data, dict) else str(data)
     if cmd:
         command_queue.put(cmd)
@@ -192,6 +196,8 @@ def on_command(data):
 @socketio.on("log_filters_update")
 def on_log_filters_update(data):
     global _log_filters
+    if not check_socketio_access():
+        return
     if not isinstance(data, list):
         return
     with _log_filters_lock:
@@ -202,6 +208,8 @@ def on_log_filters_update(data):
 @socketio.on("gs_visibility_update")
 def on_gs_visibility_update(data):
     global _gs_visibility
+    if not check_socketio_access():
+        return
     if not isinstance(data, dict):
         return
     with _gs_visibility_lock:

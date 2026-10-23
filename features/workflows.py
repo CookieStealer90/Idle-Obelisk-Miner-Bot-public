@@ -24,6 +24,7 @@ import os
 import random
 import threading
 import time
+from functools import wraps
 
 import cv2
 import numpy as np
@@ -33,7 +34,7 @@ import config.settings as s
 import config.config_workflows as cfg_wf
 
 from core.file_logger import bot_log
-from core.screen_cache import get_screen, screen_path
+from core.screen_cache import get_screen
 from core.vision import find_template
 from core.rotation_cache import find_template_rotating
 from core.tapper import tap
@@ -49,6 +50,7 @@ _wake_evt = threading.Event()
 _cancel_evt = threading.Event()       # set on master-OFF -> abort step loop
 _manual_queue = []                    # list of slugs to run manually ASAP
 _manual_lock = threading.Lock()
+_reload_evt = threading.Event()
 _call_stack = []                      # active call_workflow chain (recursion guard)
 _last_click_template_missed = False   # per-step flag: True when click_template
                                       # didn't find its template (even if optional
@@ -59,6 +61,14 @@ _last_click_template_missed = False   # per-step flag: True when click_template
 # ============================================================
 #  Logging helpers (per-WF override falls back to global)
 # ============================================================
+
+
+def _with_state_lock(function):
+    @wraps(function)
+    def locked(*args, **kwargs):
+        with state.workflows_lock:
+            return function(*args, **kwargs)
+    return locked
 
 def _wf_level(wf: dict, key: str, fallback_attr: str) -> str:
     val = wf.get(key) if isinstance(wf, dict) else None
@@ -121,7 +131,9 @@ def _step_tap_roi(step: dict, wf: dict) -> bool:
         cx = random.randint(x1, x2)
         cy = random.randint(y1, y2)
         _log_step(f"[WF] tap_roi roi=({x1},{y1},{x2},{y2}) -> ({cx},{cy}) jitter=+/-{j}px{cnote if i == 0 else ''}", wf)
-        tap(cx, cy, jitter=j)
+        if not tap(cx, cy, jitter=j):
+            _log_step("[WF] tap_roi tap failed", wf)
+            return False
     return True
 
 
@@ -140,7 +152,9 @@ def _step_tap_xy(step: dict, wf: dict) -> bool:
             _interruptible_sleep(interval)
             if _cancel_evt.is_set() or _stop_evt.is_set():
                 return False
-        tap(x, y, jitter=j, hold_ms=hold_ms)
+        if not tap(x, y, jitter=j, hold_ms=hold_ms):
+            _log_step("[WF] tap_xy tap failed", wf)
+            return False
     return True
 
 
@@ -256,7 +270,9 @@ def _step_click_template(step: dict, wf: dict) -> bool:
             _interruptible_sleep(click_interval)
             if _cancel_evt.is_set() or _stop_evt.is_set():
                 return False
-        tap(cx, cy, jitter=j, hold_ms=hold_ms)
+        if not tap(cx, cy, jitter=j, hold_ms=hold_ms):
+            _log_step(f"[WF] click_template '{tpl_name}' tap failed", wf)
+            return False
     return True
 
 
@@ -346,7 +362,9 @@ def _step_click_rotating(step: dict, wf: dict) -> bool:
             _interruptible_sleep(click_interval)
             if _cancel_evt.is_set() or _stop_evt.is_set():
                 return False
-        tap(cx, cy, jitter=j, hold_ms=hold_ms)
+        if not tap(cx, cy, jitter=j, hold_ms=hold_ms):
+            _log_step(f"[WF] click_rotating '{tpl_name}' tap failed", wf)
+            return False
     return True
 
 
@@ -377,14 +395,13 @@ def _step_rainbow_check(step: dict, wf: dict) -> bool:
         _log_step("[WF] rainbow_check missing roi", wf)
         return False
 
-    # We need the COLOR image — core pipelines load grayscale. Re-read from disk.
+    # Get color from the same validated snapshot; never re-read a stale file
+    # after a failed capture.
     slot = getattr(s, "WORKFLOWS_OWN_SCREEN_SLOT", "wf_scr")
     age = float(getattr(s, "WORKFLOWS_SCREEN_REUSE_AGE_S", 2.0))
     use_prev = bool(step.get("use_prev_screenshot", False))
-    # Trigger a fresh pull via get_screen, but then load the file in color.
-    get_screen(slot, max_age=(0.0 if not use_prev else age), force=not use_prev)
-    path = screen_path(slot)
-    img = cv2.imread(path, cv2.IMREAD_COLOR)
+    img, _, _ = get_screen(slot, max_age=(0.0 if not use_prev else age),
+                           force=not use_prev, color=True)
     if img is None:
         _log_step("[WF] rainbow_check no screenshot", wf)
         return False
@@ -752,7 +769,13 @@ def _run_step_list(slug: str, wf: dict, steps: list, depth: int, last_ok_ref: li
 
         global _last_click_template_missed
         _last_click_template_missed = False
-        ok = executor(step, wf)
+        try:
+            ok = executor(step, wf)
+        except Exception as exc:
+            _log_step(f"[WF:{slug}] step {idx} ({stype}) failed: {type(exc).__name__}: {exc}", wf)
+            return "error"
+        if _cancel_evt.is_set() or _stop_evt.is_set():
+            return "cancelled"
 
         # functional_ok semantics: click_template with optional+miss returns
         # True (no fail) but is NOT functionally ok.
@@ -767,7 +790,7 @@ def _run_step_list(slug: str, wf: dict, steps: list, depth: int, last_ok_ref: li
         if sleep_after > 0:
             _interruptible_sleep(sleep_after)
 
-    return "ok"
+    return "cancelled" if _cancel_evt.is_set() or _stop_evt.is_set() else "ok"
 
 
 def _run_workflow(slug: str, wf: dict, manual: bool = False) -> str:
@@ -803,8 +826,9 @@ def _run_workflow(slug: str, wf: dict, manual: bool = False) -> str:
         owns_lock = True
 
     _log(f"[WF:{slug}] starting ({len(top_steps)} step(s){', manual' if manual else ''})", wf)
-    prev_running = getattr(state, "workflows_running", None)
-    state.workflows_running = slug
+    with state.workflows_lock:
+        prev_running = getattr(state, "workflows_running", None)
+        state.workflows_running = slug
 
     try:
         last_ok_ref = [False]  # mutable ref shared with _run_step_list + branches
@@ -813,7 +837,8 @@ def _run_workflow(slug: str, wf: dict, manual: bool = False) -> str:
             _log(f"[WF:{slug}] completed", wf)
         return result
     finally:
-        state.workflows_running = prev_running
+        with state.workflows_lock:
+            state.workflows_running = prev_running
         if owns_lock:
             lock.release()
 
@@ -852,17 +877,18 @@ def _next_due(wf: dict) -> float:
     return time.time() + interval
 
 
+@_with_state_lock
 def _ensure_runtime_entry(slug: str, wf: dict):
     if slug not in state.workflows:
-        state.workflows[slug] = {
-            "enabled": bool(wf.get("enabled_default", False)),
-            "next_due_ts": 0.0,
-            "last_run_ts": 0.0,
-            "run_count": 0,
-            "last_status": "",
-        }
+        state.workflows[slug] = _new_runtime_entry(wf)
 
 
+def _new_runtime_entry(wf):
+    return {"enabled": bool(wf.get("enabled_default", False)), "next_due_ts": 0.0,
+            "last_run_ts": 0.0, "run_count": 0, "last_status": ""}
+
+
+@_with_state_lock
 def _eligible_workflows():
     """Return list of (slug, wf, runtime) for WFs that may auto-run."""
     out = []
@@ -887,18 +913,31 @@ def _drain_manual_queue():
 
 
 def _scheduler_tick():
+    # This boundary belongs exclusively to the worker; nested calls and all
+    # result accounting from the previous tick have finished before reload.
+    _apply_pending_reload()
+    if _reload_evt.is_set():
+        return  # another reload arrived while the candidate was being loaded
     # 1) Manual triggers first (already validated when enqueued).
-    for slug in _drain_manual_queue():
+    manual_items = _drain_manual_queue()
+    for index, slug in enumerate(manual_items):
         wf = cfg_wf.WORKFLOWS.get(slug)
         if not wf:
             continue
-        rt = state.workflows.setdefault(slug, {})
+        with state.workflows_lock:
+            _ensure_runtime_entry(slug, wf)
+            rt = state.workflows[slug]
         result = _run_workflow(slug, wf, manual=True)
-        rt["last_status"] = result
-        rt["last_run_ts"] = time.time()
-        if result == "ok":
-            rt["run_count"] = rt.get("run_count", 0) + 1
+        with state.workflows_lock:
+            rt["last_status"] = result
+            rt["last_run_ts"] = time.time()
+            if result == "ok":
+                rt["run_count"] = rt.get("run_count", 0) + 1
         if _cancel_evt.is_set():
+            return
+        if _reload_evt.is_set():
+            with _manual_lock:
+                _manual_queue[:0] = manual_items[index + 1:]
             return
 
     # 2) Auto runs: collect due, FIFO by next_due_ts
@@ -907,31 +946,37 @@ def _scheduler_tick():
 
     now = time.time()
     due = []
-    for slug, wf, rt in _eligible_workflows():
-        nxt = rt.get("next_due_ts", 0.0)
-        if nxt <= 0.0:
-            # First seen since enable -> schedule
-            rt["next_due_ts"] = _next_due(wf)
-            continue
-        if nxt <= now:
-            due.append((nxt, slug, wf, rt))
+    with state.workflows_lock:
+        for slug, wf, rt in _eligible_workflows():
+            nxt = rt.get("next_due_ts", 0.0)
+            if nxt <= 0.0:
+                # First seen since enable -> schedule
+                rt["next_due_ts"] = _next_due(wf)
+                continue
+            if nxt <= now:
+                due.append((nxt, slug, wf, rt))
     due.sort(key=lambda t: t[0])
 
     for _, slug, wf, rt in due:
         if _cancel_evt.is_set() or not state.workflows_master_enabled:
             return
+        with state.workflows_lock:
+            if not rt.get("enabled", False):
+                continue
         result = _run_workflow(slug, wf, manual=False)
-        rt["last_status"] = result
-        rt["last_run_ts"] = time.time()
-        if result == "ok":
-            rt["run_count"] = rt.get("run_count", 0) + 1
-        if result == "busy":
-            # Another feature held the lock — quick retry, don't reset interval
-            rt["next_due_ts"] = time.time() + float(getattr(s, "WORKFLOWS_BUSY_RETRY_S", 10.0))
-        elif result == "no_game":
-            rt["next_due_ts"] = time.time() + 30.0
-        else:
-            rt["next_due_ts"] = _next_due(wf)
+        with state.workflows_lock:
+            rt["last_status"] = result
+            rt["last_run_ts"] = time.time()
+            if result == "ok":
+                rt["run_count"] = rt.get("run_count", 0) + 1
+            if result == "busy":
+                rt["next_due_ts"] = time.time() + float(getattr(s, "WORKFLOWS_BUSY_RETRY_S", 10.0))
+            elif result == "no_game":
+                rt["next_due_ts"] = time.time() + 30.0
+            else:
+                rt["next_due_ts"] = _next_due(wf)
+        if _reload_evt.is_set():
+            return
 
 
 def _worker():
@@ -968,6 +1013,7 @@ def start():
     _thread.start()
 
 
+@_with_state_lock
 def toggle_master() -> bool:
     """Flip master switch. Off => cancel any in-progress WF cooperatively."""
     new = not bool(getattr(state, "workflows_master_enabled", False))
@@ -992,6 +1038,7 @@ def toggle_master() -> bool:
     return new
 
 
+@_with_state_lock
 def toggle_wf(slug: str) -> bool:
     """Per-WF auto toggle."""
     wf = cfg_wf.WORKFLOWS.get(slug)
@@ -1009,6 +1056,7 @@ def toggle_wf(slug: str) -> bool:
     return rt["enabled"]
 
 
+@_with_state_lock
 def manual_trigger(slug: str):
     """Queue a manual run. Rejected (toast) if master OFF or WF currently running."""
     if not state.workflows_master_enabled:
@@ -1030,18 +1078,37 @@ def manual_trigger(slug: str):
 
 
 def reload_workflows():
-    """Re-read config_workflows.WORKFLOWS (after user_workflows.json change)."""
+    """Request reload; only the workflow worker may publish definitions."""
+    with state.workflows_lock:
+        _reload_evt.set()
+        state.workflows_reload_status = "pending"
+        state.workflows_reload_error = ""
+    # Do not set _wake_evt: that would shorten a running workflow's waits.
+    _log("[WORKFLOWS] reload requested; applying at next idle scheduler boundary")
+
+
+def _apply_pending_reload():
+    """Worker-only; keep the active generation intact on any loading error."""
+    with state.workflows_lock:
+        if not _reload_evt.is_set():
+            return
+        _reload_evt.clear()
     try:
-        import importlib
-        importlib.reload(cfg_wf)
-        # Drop runtime entries for removed slugs; keep enabled state for kept ones.
-        existing = set(cfg_wf.WORKFLOWS.keys())
-        for slug in list(state.workflows.keys()):
-            if slug not in existing:
-                del state.workflows[slug]
-        for slug, wf in cfg_wf.WORKFLOWS.items():
-            if isinstance(wf, dict):
-                _ensure_runtime_entry(slug, wf)
-        _log("[WORKFLOWS] definitions reloaded")
+        candidate = cfg_wf.load_workflow_definitions()
+        with state.workflows_lock:
+            # Publish definitions and matching runtime as one metadata update.
+            runtime = {slug: state.workflows[slug] if slug in state.workflows else _new_runtime_entry(wf)
+                       for slug, wf in candidate.items()}
+            with _manual_lock:
+                _manual_queue[:] = [slug for slug in _manual_queue if slug in candidate]
+            state.workflows = runtime
+            cfg_wf.WORKFLOWS = candidate
+            state.workflows_reload_status = "pending" if _reload_evt.is_set() else "applied"
+            state.workflows_reload_error = ""
+        _log("[WORKFLOWS] reload completed")
     except Exception as e:
-        _log(f"[WORKFLOWS] reload failed: {type(e).__name__}: {e}")
+        message = f"{type(e).__name__}: {e}"
+        with state.workflows_lock:
+            state.workflows_reload_status = "pending" if _reload_evt.is_set() else "error"
+            state.workflows_reload_error = message
+        _log(f"[WORKFLOWS] reload failed; keeping active definitions: {message}")

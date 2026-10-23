@@ -372,6 +372,11 @@ header h1 span{color:var(--accent)}
 
 /* GEM STATISTICS TILE — 4 column: Label | Uptime | Total | ⌀/h */
 .gs-container{font-family:var(--font);font-size:.68rem}
+.gs-inactive{color:var(--text-dim);font-size:.72rem;font-weight:700;text-align:center;padding:6px 0}
+.gs-legacy{color:var(--text-dim);font-size:.62rem;padding:4px 0}
+.gs-paused .gs-table{opacity:.5;filter:grayscale(1)}
+.gs-paused .gs-td-val,.gs-paused .gs-td-avg{color:var(--text-dim)}
+.gs-add-btn:disabled{opacity:.45;cursor:not-allowed}
 .gs-table{width:100%;border-collapse:collapse}
 .gs-table thead{border:none}
 .gs-table td,.gs-table th{padding:2px 0;vertical-align:baseline}

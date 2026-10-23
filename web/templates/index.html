@@ -35,6 +35,7 @@
         <div class="stat"><div class="stat-label">Game</div><div class="stat-value" id="s-game">&#x2014;</div><div class="stat-sub" id="s-action-lock"></div></div>
         <div class="stat"><div class="stat-label">Freebie-Gems</div><div class="stat-value accent" id="s-gem-val">0<span class="ico">&#x1F48E;</span></div><div class="stat-sub" id="s-gem-next"></div></div>
         <div class="stat"><div class="stat-label">Lootbug</div><div class="stat-value" id="s-lootbug-val">&#x2014;</div><div class="stat-sub" id="s-lootbug-next"></div></div>
+        <div class="stat"><div class="stat-label">FOUNDERS BUNDLE</div><div class="stat-value" id="s-founders-val">&#x2014;</div><div class="stat-sub" id="s-founders-next"></div></div>
         <div class="stat" title="Detected in-game level (images/level/digit_*_tpl.png)"><div class="stat-label">Level</div><div class="stat-value" id="s-level-val">&#x2014;</div><div class="stat-sub" id="s-level-next"></div></div>
       </div>
     </div>
@@ -51,6 +52,7 @@
         <button class="btn" id="btn-auto" onclick="cmd('auto_global')">&#x26A1; Workflows</button>
         <button class="btn" id="btn-freebies" onclick="cmd('freebies_toggle')" title="Auto-claim freebies">&#x1F381; Freebies</button>
         <button class="btn" id="btn-lootbug" onclick="cmd('lootbug_toggle')" title="Auto-click in-game Lootbug">&#x1F41B; Lootbug</button>
+        <button class="btn" id="btn-founders" onclick="cmd('founders_toggle')" title="Auto-claim Founders Bundle lootboxes">&#x1F4E6; FOUNDERS BUNDLE</button>
         <div class="ctrl-spacer"></div>
         <button class="btn primary" onclick="cmd('reload_cfg')">&#x1F504; Reload</button>
       </div>
@@ -100,7 +102,7 @@
         <button class="btn primary" onclick="saveSettings()">&#x1F4BE; Save Settings</button>
       </div>
       <div style="font-size:.6rem;color:var(--text-dim);margin-top:4px">
-        Saves to user_settings.json &#x2192; Use "&#x1F504; Reload" to apply (no restart needed)
+        Saves to user_settings.json &#x2192; Restart the bot to apply settings.
       </div>
     </div>
 
@@ -110,7 +112,8 @@
         <button class="btn primary" onclick="saveWorkflows()">&#x1F4BE; Save Workflows</button>
       </div>
       <div style="font-size:.6rem;color:var(--text-dim);margin-top:4px">
-        Saves to <code>user_workflows.json</code> &#x2192; Use "&#x1F504; Reload" to apply (no restart needed).
+        Saves to <code>user_workflows.json</code> &#x2192; Use "&#x1F504; Reload" to apply after the running workflow finishes.
+        <span id="workflow-reload-status" role="status"></span>
         Templates for <b>click_template</b> are picked from <code>./images/workflows/</code>.
       </div>
     </div>
@@ -132,11 +135,14 @@
     </div>
   </div>
   <div class="card-body" id="body-gem-stats">
+    <div style="font-size:.6rem;color:var(--text-dim);padding:4px 0">Gem totals are calculated from claim taps and configured amounts; in-game rewards are not verified.</div>
+    <div id="gs-inactive" class="gs-inactive" role="status" hidden>Freebies inactive</div>
+    <div id="gs-legacy" class="gs-legacy" hidden>Historical All-Time uptime is unavailable. Gem totals are preserved; reset statistics to start complete uptime tracking.</div>
     <div id="gs-content" class="gs-container">
       <div class="scr-placeholder" style="font-size:.6rem;padding:12px">Waiting for data&#x2026;</div>
     </div>
     <div class="gs-action-row">
-      <button class="btn gs-add-btn" onclick="manualAddGem('gem')" title="Add one Freebie-Gem claim to statistics (no cooldown)">+ add freebie-gem &#x1F48E;</button>
+      <button id="gs-add" class="btn gs-add-btn" onclick="manualAddGem('gem')" title="Add one Freebie-Gem claim to statistics (no cooldown)">+ add freebie-gem &#x1F48E;</button>
       <button class="btn danger" style="font-size:.62rem;padding:4px 12px" onclick="resetGemStats()">Reset all Statistics</button>
     </div>
   </div>

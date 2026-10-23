@@ -159,6 +159,7 @@ function resetGemStats() {
 }
 
 function manualAddGem(type) {
+  if (!_gsLastData || !_gsLastData.gem_statistics || !_gsLastData.gem_statistics.active) return;
   var label = 'Freebie-Gem';
   if (!confirm('Manually add one ' + label + ' claim to statistics?\n\n(This does not trigger any cooldown)')) return;
   fetch('/api/gem_stats/manual_add', {
@@ -184,32 +185,32 @@ function showGemStatsHelp(e) {
     + '<h3>\uD83D\uDCC8 Freebie-Gems Statistics Guide</h3>'
 
     + '<h4>\uD83D\uDD39 Columns</h4>'
-    + '<p><b>Uptime</b> \u2014 Actual bot running time within this time window. '
-    + 'If the bot was offline for part of the period, this will be less than the wall-clock duration. '
+    + '<p><b>Uptime</b> \u2014 Time while the Freebie claimer is enabled, including searching and waiting. '
+    + 'Disabled and offline periods are excluded. '
     + 'The suffix shows the reference window: <b>/24h</b> and <b>/7d</b> for the rolling windows, '
     + 'and for All-Time the suffix shows the total wall-clock time since statistics began '
     + '(e.g. <i>8d 23h/10d</i> means the bot was up 8d 23h out of 10 days total).</p>'
     + '<p><b>Total</b> \u2014 Total diamonds collected in this time window.</p>'
     + '<p><b>\u2300/h</b> \u2014 Average diamonds per hour. <b>Click the column header to toggle between two modes:</b></p>'
     + '<p style="margin-left:10px"><b>Wall-clock mode</b> (default, header shows \u2300/h) \u2014 '
-    + 'Divides total by the full elapsed time window (24h, 7d, or total time since first event). '
+    + 'Divides total by the full elapsed time window (24h, 7d, or total time since statistics started). '
     + 'Offline periods count against you, so the average reflects your real-world yield over time. '
     + 'Uptime suffixes (/24h, /7d, /wallclock) are shown.</p>'
     + '<p style="margin-left:10px"><b>Uptime mode</b> (header shows \u2300/h \u23F1) \u2014 '
-    + 'Divides total only by the actual bot running time (uptime). '
+    + 'Divides total only by active Freebie claimer time (uptime). '
     + 'Offline periods are excluded, so you see the true collection rate while the bot was active. '
     + 'Uptime suffixes are hidden since the uptime column already represents the denominator. '
-    + 'Session row is identical in both modes (the bot was running the entire session).</p>'
+    + 'Session row is identical in both modes.</p>'
 
     + '<h4>\uD83D\uDD39 Rows</h4>'
-    + '<p><b>Session</b> \u2014 Data since the bot was last started. Resets on every restart. '
-    + 'The \u2300/h here uses actual session uptime as denominator (the bot was running the entire time).</p>'
+    + '<p><b>Session</b> \u2014 Data since the bot was last started or statistics were reset. '
+    + 'The \u2300/h uses active Freebie claimer time in this session.</p>'
     + '<p><b>last 24h</b> \u2014 Rolling 24-hour window based on real time (wall-clock). '
-    + 'Becomes available 24 hours after the first gem is ever recorded. '
+    + 'Becomes available 24 hours after statistics start at the first activation, even without a claim. '
     + 'Hover the \u23F3 icon to see the remaining time.</p>'
     + '<p><b>last 7 days</b> \u2014 Rolling 7-day window based on real time. '
-    + 'Becomes available 7 calendar days after the first gem is recorded.</p>'
-    + '<p><b>All-Time (date)</b> \u2014 Cumulative totals since the last reset (or since the very first gem). '
+    + 'Becomes available 7 days after statistics start. Both rolling windows use hourly buckets.</p>'
+    + '<p><b>All-Time (date)</b> \u2014 Cumulative totals since the first activation or reset. '
     + 'The row label shows the start date directly (e.g. 2026-02-26). '
     + 'The \u2300/h uses total wall-clock time since that date (in wall-clock mode).</p>'
 
@@ -218,13 +219,16 @@ function showGemStatsHelp(e) {
     + 'Manually adds one claim to the statistics, as if the bot had collected it. '
     + 'Use this when you clicked a gem yourself in-game. '
     + 'The amount added equals your configured <i>diamonds_per_claim</i> (default: 5). '
-    + 'This does <b>not</b> trigger any cooldown.</p>'
+    + 'Requires an active Freebie claimer and does <b>not</b> trigger any cooldown.</p>'
     + '<p><b>Reset all Statistics</b> \u2014 '
     + 'Clears everything: all-time totals, 24h/7d rolling history, uptime tracking, '
-    + 'and session counters. All data is permanently deleted. Use this for a complete fresh start.</p>'
+    + 'and session counters. If inactive, the new statistics period waits for the next activation.</p>'
+    + '<p><b>Freebies inactive</b> \u2014 Values are greyed out; claims and uptime pause. '
+    + 'Wall-clock time and rolling windows continue. Re-enabling resumes the same statistics.</p>'
 
     + '<p class="gs-h-dim" style="margin-top:10px">Data is persisted to gem_statistics.json and survives restarts. '
-    + 'Hourly buckets older than 7 days are automatically pruned.</p>'
+    + 'Hourly buckets older than 7 days are automatically pruned; All-Time gems and uptime remain as sums. '
+    + 'Averages require at least one hour of their reference time. Legacy files cannot recover lost uptime.</p>'
     + '</div>';
   document.body.appendChild(ov);
 }
@@ -287,9 +291,9 @@ function _gsSection(title, s, sinceDate, tips) {
   }
   h += '<tr>';
   h += '<td class="gs-td-label">' + atLabel + '</td>';
-  h += '<td class="gs-td-up gs-col-up">' + _gsUptimeCell(s.up_alltime, null, atSuffix) + '</td>';
+  h += '<td class="gs-td-up gs-col-up">' + (s.legacy ? '<span title="Historical uptime unavailable">&ndash;</span>' : _gsUptimeCell(s.up_alltime, tips.alltime, atSuffix)) + '</td>';
   h += '<td class="gs-td-val">' + _gsFmt(s.alltime) + '</td>';
-  h += '<td class="gs-td-avg">' + _gsVal(avgAt, tips.alltime) + '</td>';
+  h += '<td class="gs-td-avg">' + (s.legacy && isUptime ? '<span title="Historical uptime unavailable">&ndash;</span>' : _gsVal(avgAt, tips.alltime)) + '</td>';
   h += '</tr>';
 
   h += '</tbody></table>';
@@ -307,7 +311,9 @@ function _gsFingerprint(gs) {
     Math.floor((gs.wallclock_alltime_s || 0) / 60),
     gs.gem_since_startup, gs.gem_last_24h, gs.gem_last_7d, gs.gem_alltime,
     gs.gem_avg_per_hour_session, gs.gem_avg_per_hour_24h, gs.gem_avg_per_hour_7d, gs.gem_avg_per_hour_alltime,
-    gs.first_event_ts, gs.last_reset_ts
+    gs.gem_avg_per_hour_uptime_24h, gs.gem_avg_per_hour_uptime_7d, gs.gem_avg_per_hour_uptime_alltime,
+    gs.stats_start_ts, gs.last_reset_ts, gs.active, gs.alltime_uptime_complete,
+    Math.ceil((gs.wallclock_remaining_24h_s || 0) / 60), Math.ceil((gs.wallclock_remaining_7d_s || 0) / 60)
   ].join('|');
 }
 
@@ -317,6 +323,16 @@ function updateGemStatsCard(d) {
 
   _gsLastData = d;
 
+  var paused = gs.active !== true;
+  var card = document.getElementById('card-gem-stats');
+  if (card) card.classList.toggle('gs-paused', paused);
+  var inactive = document.getElementById('gs-inactive');
+  if (inactive) inactive.hidden = !paused;
+  var add = document.getElementById('gs-add');
+  if (add) add.disabled = paused;
+  var legacy = document.getElementById('gs-legacy');
+  if (legacy) legacy.hidden = gs.alltime_uptime_complete !== false;
+
   /* Skip re-render if nothing visible changed */
   var fp = _gsFingerprint(gs);
   if (fp === _gsLastFingerprint) return;
@@ -325,7 +341,7 @@ function updateGemStatsCard(d) {
   var container = document.getElementById('gs-content');
   if (!container) return;
 
-  var sinceTs = (gs.last_reset_ts && gs.last_reset_ts > 0) ? gs.last_reset_ts : gs.first_event_ts;
+  var sinceTs = gs.stats_start_ts;
   var sinceDate = _gsDate(sinceTs);
 
   /* Remaining-time tooltips */
@@ -335,28 +351,30 @@ function updateGemStatsCard(d) {
   var upAll = gs.uptime_alltime_s || 0;
   var wc24h = gs.wallclock_remaining_24h_s;
   var wc7d = gs.wallclock_remaining_7d_s;
-  var firstTs = gs.first_event_ts || 0;
+  var firstTs = gs.stats_start_ts || 0;
   var tips = { session: null, h24: null, d7: null, alltime: null };
 
   if (uptime < 3600)
     tips.session = 'available after 1h session uptime (' + _gsRemaining(3600 - uptime) + ' remaining)';
   if (firstTs <= 0)
-    tips.h24 = 'available after 24h \u2014 no events recorded yet';
+    tips.h24 = 'available 24h after the Freebie claimer is first activated';
   else if (up24h == null)
-    tips.h24 = 'available after 24h since first event (' + _gsRemaining(wc24h) + ' remaining)';
+    tips.h24 = 'available after 24h since statistics started (' + _gsRemaining(wc24h) + ' remaining)';
   if (firstTs <= 0)
-    tips.d7 = 'available after 7 days \u2014 no events recorded yet';
+    tips.d7 = 'available 7 days after the Freebie claimer is first activated';
   else if (up7d == null)
-    tips.d7 = 'available after 7 days since first event (' + _gsRemaining(wc7d) + ' remaining)';
-  if (firstTs <= 0)
-    tips.alltime = 'available after 1h session uptime \u2014 no events recorded yet';
-  else if (upAll < 3600)
-    tips.alltime = 'available after 1h session uptime (' + _gsRemaining(3600 - upAll) + ' remaining)';
+    tips.d7 = 'available after 7 days since statistics started (' + _gsRemaining(wc7d) + ' remaining)';
+  var alltimeReference = _gsAvgMode === 'uptime' ? upAll : (gs.wallclock_alltime_s || 0);
+  if (alltimeReference < 3600)
+    tips.alltime = 'available after 1h ' + (_gsAvgMode === 'uptime' ? 'active uptime' : 'wall-clock time') + ' (' + _gsRemaining(3600 - alltimeReference) + ' remaining)';
+  if (gs.alltime_uptime_complete === false && _gsAvgMode === 'uptime')
+    tips.alltime = 'Historical All-Time uptime is unavailable';
 
   var wcAlltime = gs.wallclock_alltime_s || 0;
 
   var html = '<div id="gs-section-gem">';
   html += _gsSection('Freebie-Gems &#x1F48E;', {
+    legacy: gs.alltime_uptime_complete === false,
     session:     gs.gem_since_startup,
     last_24h:    gs.gem_last_24h,
     last_7d:     gs.gem_last_7d,

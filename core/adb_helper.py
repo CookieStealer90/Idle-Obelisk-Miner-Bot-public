@@ -165,23 +165,39 @@ def _reconnect_if_needed(error_msg: str) -> bool:
     return ensure_connected()
 
 
-def adb(*args) -> str:
-    """Run ADB shell/command with auto-reconnect on failure."""
+def adb(*args, device: str = None, log_fn=None) -> str:
+    """Run ADB with reconnect. Explicit device pins every retry to that serial.
+
+    If reconnect selects another emulator, a pinned caller must restart its
+    entire transaction instead of continuing its pull/cleanup on that device.
+    """
     global _active_device
+
+    def _retry_connection(error: str, attempt: int) -> bool:
+        if attempt >= ADB_MAX_RETRIES - 1:
+            return False
+        if log_fn:
+            log_fn(f"adb_attempt={attempt + 1}/{ADB_MAX_RETRIES} error={error!r}; checking reconnect")
+        connected = _reconnect_if_needed(error)
+        if log_fn:
+            log_fn(f"adb_reconnect={connected} active_device={_active_device} pinned_device={device}")
+        return connected
 
     for attempt in range(ADB_MAX_RETRIES):
         try:
-            cmd = [ADB, "-s", _active_device, *args]
+            if device is not None and attempt > 0 and _active_device != device:
+                raise RuntimeError(f"ADB device changed: {device} -> {_active_device}; restart transaction")
+            cmd = [ADB, "-s", device if device is not None else _active_device, *args]
             p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                text=True, timeout=30, creationflags=_CREATE_FLAGS)
             if p.returncode != 0:
                 err = (p.stderr or p.stdout).strip()
-                if attempt < ADB_MAX_RETRIES - 1 and _reconnect_if_needed(err):
+                if _retry_connection(err, attempt):
                     continue
                 raise RuntimeError(err)
             return p.stdout
         except subprocess.TimeoutExpired:
-            if attempt < ADB_MAX_RETRIES - 1 and _reconnect_if_needed("connection refused"):
+            if _retry_connection("connection refused", attempt):
                 continue
             raise RuntimeError("ADB command timed out")
 

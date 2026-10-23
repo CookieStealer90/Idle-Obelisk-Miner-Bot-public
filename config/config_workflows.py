@@ -51,6 +51,10 @@ Step types (common keys: "type", "_disabled", "sleep_after"):
     hold_and_wiggle  chained swipes in ROI    -> roi, duration_s, step_ms, max_step_px
 """
 from pathlib import Path
+import copy
+import warnings
+from config.validation import validate_workflows
+from config.json_store import read_json
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 IMG_DIR = BASE_DIR / "images"
@@ -1566,21 +1570,25 @@ WORKFLOWS = {
 
 
 # =========== Apply user_workflows.json overrides ===========
+_DEFAULT_WORKFLOWS = copy.deepcopy(WORKFLOWS)
+
+
+def load_workflow_definitions():
+    """Load and validate a candidate without mutating active definitions."""
+    p = BASE_DIR / "config" / "user_workflows.json"
+    data = read_json(p) if p.exists() else copy.deepcopy(_DEFAULT_WORKFLOWS)
+    return validate_workflows(data)
+
+
 def _apply_workflow_overrides():
     """Replace WORKFLOWS with user_workflows.json content if present.
     The JSON file fully overrides the in-code defaults (no deep merge),
     so deleted steps stay deleted on reload."""
     global WORKFLOWS
-    import json
-    p = BASE_DIR / "config" / "user_workflows.json"
-    if not p.exists():
-        return
     try:
-        data = json.loads(p.read_text(encoding="utf-8"))
-        if isinstance(data, dict) and data:
-            WORKFLOWS = data
-    except Exception:
-        pass
+        WORKFLOWS = load_workflow_definitions()
+    except (OSError, ValueError, TypeError) as exc:
+        warnings.warn(f"Cannot load workflows; keeping built-in defaults: {exc}", RuntimeWarning)
 
 
 _apply_workflow_overrides()

@@ -21,6 +21,10 @@ gem_collected = 0
 gem_cooldown_until = 0.0
 
 # ========= Workflows =========
+# Short-lived metadata lock; never held over game actions or waits.
+workflows_lock = threading.RLock()
+workflows_reload_status = "idle"  # idle | pending | applied | error
+workflows_reload_error = ""
 # Master switch for the workflow scheduler ("Auto WF" button).
 workflows_master_enabled = False
 # Per-WF runtime state, populated dynamically by features/workflows.py.
@@ -37,8 +41,8 @@ screenshot_visible = True
 
 # ========= Freebies feature =========
 freebies_enabled = True
-freebies_claimed_count = 0           # number of successful claim cycles
-freebies_diamonds_total = 0          # sum of diamonds from all claims
+freebies_claimed_count = 0           # claim taps sent without an ADB error
+freebies_diamonds_total = 0          # estimated diamonds, not measured in-game
 freebies_last_claim_ts = 0.0
 freebies_next_check_ts = 0.0
 
@@ -52,11 +56,16 @@ detect_level_last_error = ""         # last failure reason (for UI tooltip)
 
 # ========= Lootbug feature =========
 lootbug_enabled = False
-lootbug_buy_bonus = False            # when True and enabled: also buy gem-bonus if template matches
 lootbug_clicked_count = 0            # number of successful lootbug clicks
-lootbug_bonus_count = 0              # number of successful bonus purchases
+lootbug_bonus_count = 0              # Buy taps sent without an ADB error
 lootbug_last_click_ts = 0.0
 lootbug_next_check_ts = 0.0
+
+# ========= Founders feature =========
+founders_enabled = False
+founders_clicked_count = 0
+founders_last_click_ts = 0.0
+founders_next_check_ts = 0.0
 
 # ========= Suppress Exceptions =========
 SUPPRESS_EXCEPTIONS = True

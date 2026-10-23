@@ -32,7 +32,7 @@ import config.app_state as state
 import config.settings as s
 
 from core.file_logger import bot_log
-from core.screen_cache import get_screen, screen_path
+from core.screen_cache import get_screen, get_latest_cached_screen
 from core.game_state import is_game_running
 
 
@@ -78,23 +78,8 @@ def _best_cached_screen(max_age: float):
     """Return (img_gray, slot_name) from the freshest accepted cache slot
     younger than max_age, or (None, None) if nothing qualifies."""
     slots = list(getattr(s, "DETECT_LEVEL_ACCEPT_SLOTS", [_SCR_SLOT_DEFAULT]))
-    now = time.time()
-    best = None  # (mtime, slot, path)
-    for slot in slots:
-        p = screen_path(slot)
-        if not os.path.exists(p):
-            continue
-        age = now - os.path.getmtime(p)
-        if age >= max_age:
-            continue
-        if best is None or os.path.getmtime(p) > best[0]:
-            best = (os.path.getmtime(p), slot, p)
-    if best is None:
-        return None, None
-    img = cv2.imread(best[2], cv2.IMREAD_GRAYSCALE)
-    if img is None:
-        return None, None
-    return img, best[1]
+    img, _, _, slot, _ = get_latest_cached_screen(slots, max_age)
+    return img, slot
 
 
 def _get_screen_for_scan():

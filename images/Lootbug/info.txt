@@ -1,2 +1,1 @@
 new bug-template? just drop it in.. all Images with lootbug_tpl* are loaded   
-new Bonus should be clicked? add the template "bonus_tpl_***.png

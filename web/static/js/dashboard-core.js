@@ -2,7 +2,9 @@
    dashboard-core.js — Socket, state, helpers, tabs
    ============================================================ */
 
-const socket = io({reconnection:true,reconnectionDelay:1000});
+// Connect only after all dashboard modules have registered their handlers.
+// The server can send bot_state before the client's connect event.
+const socket = io({autoConnect:false,reconnection:true,reconnectionDelay:1000});
 let botState = {};
 let connected = false;
 
@@ -12,15 +14,17 @@ let _safariHintTimer = setTimeout(()=>{
   if(hint && !connected) hint.style.display = '';
 }, 4000);
 
-socket.on('connect',()=>{
-  connected=true;
-  clearTimeout(_safariHintTimer);
+function updateConnectionStatus(isConnected){
+  connected=isConnected;
+  if(isConnected) clearTimeout(_safariHintTimer);
   const hint = document.getElementById('safari-hint');
-  if(hint) hint.style.display = 'none';
-  document.getElementById('conn-dot').classList.add('on');
-  document.getElementById('conn-text').textContent='connected';
-});
-socket.on('disconnect',()=>{connected=false;document.getElementById('conn-dot').classList.remove('on');document.getElementById('conn-text').textContent='disconnected'});
+  if(hint && isConnected) hint.style.display = 'none';
+  document.getElementById('conn-dot').classList.toggle('on',isConnected);
+  document.getElementById('conn-text').textContent=isConnected?'connected':'disconnected';
+}
+socket.on('connect',()=>updateConnectionStatus(true));
+socket.on('disconnect',()=>updateConnectionStatus(false));
+socket.on('connect_error',()=>updateConnectionStatus(false));
 socket.on('toast',(d)=>{if(d&&d.msg)showToast(d.msg,!!d.error);});
 
 function cmd(c){socket.emit('command',{cmd:c})}
@@ -82,10 +86,13 @@ document.addEventListener('DOMContentLoaded', function(){
   /* Sidebar-Breite: wenn Config beim Laden offen ist, sofort breit */
   var grid=document.querySelector('.grid-main');
   if(grid && !cardStates['config']) grid.classList.add('config-open');
+  socket.connect();
 });
 
 /* ============ STATE UPDATE ============ */
 socket.on('bot_state', (data) => {
+  // Live state also repairs a stale badge if a connect notification was missed.
+  updateConnectionStatus(true);
   botState = data;
   if (!data.started) return;
   updateStatus(data);
@@ -130,7 +137,7 @@ function esc(s){if(!s)return'';const d=document.createElement('div');d.textConte
 /* ============ RESTART ============ */
 function restartBot(){
   if(!confirm('Are you sure you want to restart the bot?'))return;
-  fetch('/api/restart',{method:'POST'}).then(r=>r.json()).then(r=>{
+  fetch('/api/restart',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}).then(r=>r.json()).then(r=>{
     if(r.ok){
       showToast('Restarting… page will reconnect automatically');
       document.getElementById('conn-text').textContent='restarting…';

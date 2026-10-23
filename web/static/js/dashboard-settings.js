@@ -9,7 +9,6 @@ const FIELD_HINTS={
   'screenshot_visible':'show Screenshot card',
   'freebies_enabled':'auto-start Freebies feature on bot launch',
   'lootbug_enabled':'auto-start Lootbug feature on bot launch',
-  'lootbug_buy_bonus':'auto-start with gem-bonus purchase armed (requires lootbug_enabled=true)',
   'workflows_enabled':'master "Auto WF" toggle on bot launch (false = scheduler off)',
   'detect_level_enabled':'auto-start Detect Level feature on bot launch (required by workflow level_* if-conditions)',
   /* detect_level */
@@ -28,7 +27,11 @@ const FIELD_HINTS={
   'WORKFLOWS_LOG_LEVEL':'general scheduler log level — FULL | TXT | UI',
   'WORKFLOWS_LOG_LEVEL_STEP':'individual step execution log — FULL | TXT | UI',
   'WORKFLOWS_LOG_LEVEL_BUSY':'postponed/rejected (lock busy) — FULL | TXT | UI',
-  /* screenshot viewer */
+  /* screenshot capture/viewer */
+  'SCREENSHOT_CAPTURE_ATTEMPTS':'full capture attempts per request (1–5); each uses a new Android filename',
+  'SCREENSHOT_RETRY_DELAY_S':'pause between failed full capture attempts (0–10 sec); ADB reconnect may take longer',
+  'SCREENSHOT_LOG_LEVEL':'TXT = file; FULL = file + WebUI; UI = WebUI only',
+  'SCREENSHOT_LOG_CACHE_HITS':'verbose cache reuse diagnostics; enable temporarily when investigating problems',
   'SCREENSHOT_VIEWER_FILES':'comma-separated filenames in ./temp/ to check (newest wins)',
   /* running detection */
   'RUNNING_ROI':'x1, y1, x2, y2 search area for game_running.png',
@@ -49,27 +52,35 @@ const FIELD_HINTS={
   'FREEBIES_LOG_LEVEL_CLAIMED':'"Freebie Claimed +X Diamonds" line — FULL | TXT | UI',
   'FREEBIES_CLOSE_ROI':'x1,y1,x2,y2 search area for close_menu.png after claim',
   'FREEBIES_POST_CLAIM_DELAY_S':'wait after claim before searching close',
-  /* lootbug founders */
-  'LOOTBUG_FOUNDERS_ENABLED':'only enable if you own the Founders Bundle — checks for founders lootbox each scan cycle',
-  'LOOTBUG_FOUNDERS_LOG_LEVEL':'founders detection + tap events — FULL | TXT | UI',
+  /* founders */
+  'FOUNDERS_ENABLED':'auto-start FOUNDERS BUNDLE on bot launch (requires restart)',
+  'FOUNDERS_CHECK_INTERVAL_S':'seconds between Founders scans',
+  'FOUNDERS_BUSY_RETRY_S':'retry delay when another feature holds the action lock',
+  'FOUNDERS_DETECT_ROI':'x1,y1,x2,y2 search area for the Founders lootbox',
+  'FOUNDERS_TEMPLATE':'Founders template path relative to images/',
+  'FOUNDERS_MATCH_THRESHOLD':'0.0-1.0 template match score for the Founders lootbox',
+  'FOUNDERS_SCREEN_REUSE_AGE_S':'reuse game_scr.png if younger than this (sec)',
+  'FOUNDERS_TAP_JITTER_PX':'random +/- pixel jitter on Founders taps',
+  'FOUNDERS_LOG_LEVEL':'general worker and detection logs — FULL | TXT | UI',
+  'FOUNDERS_LOG_LEVEL_CLICK':'tap event logs — FULL | TXT | UI',
+  'FOUNDERS_LOG_LEVEL_BUSY':'postponed-by-lock logs — FULL | TXT | UI',
   /* lootbug */
   'LOOTBUG_CHECK_INTERVAL_S':'seconds between lootbug scans',
+  'LOOTBUG_INTERVAL_VARIANCE_PCT':'random +/- percent of CHECK_INTERVAL per regular scan (0 = fixed interval, range 0-100); next countdown uses the actual scheduled time',
   'LOOTBUG_BUSY_RETRY_S':'retry delay if another feature is using ingame action lock',
   'LOOTBUG_DETECT_ROI':'x1,y1,x2,y2 search area for the lootbug',
   'LOOTBUG_MATCH_THRESHOLD':'0.0-1.0 template match score',
   'LOOTBUG_SCREEN_REUSE_AGE_S':'reuse game_scr.png if younger than this (sec)',
   'LOOTBUG_TAP_JITTER_PX':'random +/- pixel jitter on taps',
-  'LOOTBUG_POST_CLICK_DELAY_S':'wait between lootbug-tap and close-tap',
-  'LOOTBUG_CLOSE_ROI':'x1,y1,x2,y2 search area for close_menu.png after click',
+  'LOOTBUG_BUY_RETRY_S':'seconds between fresh screenshot retries while the buy box is obscured; never closes the popup',
+  'LOOTBUG_POST_CLICK_DELAY_S':'wait between lootbug-tap and buy-box scan',
   'LOOTBUG_LOG_LEVEL':'general worker logs — FULL | TXT | UI',
   'LOOTBUG_LOG_LEVEL_DETECT':'template-match outcome logs — FULL | TXT | UI',
   'LOOTBUG_LOG_LEVEL_CLICK':'tap event logs — FULL | TXT | UI',
   'LOOTBUG_LOG_LEVEL_BUSY':'postponed-by-lock logs — FULL | TXT | UI',
-  'LOOTBUG_BUY_GEM_UPGRADES_ENABLED':'default for gem-bonus purchase on bot start (tri-state toggle cycles to this)',
-  'LOOTBUG_BONUS_DETECT_ROI':'x1,y1,x2,y2 search area for bonus_tpl_*.png inside the lootbug popup',
-  'LOOTBUG_BONUS_BUY_ROI':'x1,y1,x2,y2 — double-tap target (center + jitter). 2x taps also close the popup',
-  'LOOTBUG_BONUS_TAP_JITTER_PX':'random +/- pixel jitter on bonus-buy taps',
-  'LOOTBUG_BONUS_DOUBLE_CLICK_DELAY_S':'pause between the two buy-taps',
+  'LOOTBUG_BONUS_TAP_JITTER_PX':'random +/- pixel jitter on buy-box tap',
+  'LOOTBUG_BONUS_BUY_TEMPLATE':'buy-box template path relative to images/',
+  'LOOTBUG_BONUS_BUY_ROI':'x1,y1,x2,y2 search area for the buy-box template; click the matched center once',
   'LOOTBUG_LOG_LEVEL_BONUS':'bonus-purchase events — FULL | TXT | UI',
   /* scroll */
   'SCROLL_DEFAULT_AREA':'x1, y1, x2, y2 rectangle for scrolls with no area given',
@@ -86,6 +97,10 @@ const FIELD_HINTS={
 
 /* Unit suffixes for settings fields */
 const FIELD_UNITS={
+  'SCREENSHOT_RETRY_DELAY_S':'s',
+  'FOUNDERS_CHECK_INTERVAL_S':'s','FOUNDERS_BUSY_RETRY_S':'s',
+  'FOUNDERS_SCREEN_REUSE_AGE_S':'s',
+  'FOUNDERS_TAP_JITTER_PX':'px',
   /* adb */
   'ADB_CONNECT_TIMEOUT':'s',
   /* timers */
@@ -102,12 +117,13 @@ const FIELD_UNITS={
   'FREEBIES_CHECK_INTERVAL_S':'s','FREEBIES_POST_OPEN_DELAY_S':'s','FREEBIES_POST_CLAIM_DELAY_S':'s',
   'FREEBIES_TAP_JITTER_PX':'px',
   /* lootbug */
+  'LOOTBUG_BONUS_TAP_JITTER_PX':'px','LOOTBUG_BUY_RETRY_S':'s',
   'LOOTBUG_CHECK_INTERVAL_S':'s','LOOTBUG_BUSY_RETRY_S':'s',
+  'LOOTBUG_INTERVAL_VARIANCE_PCT':'%',
   'DETECT_LEVEL_INTERVAL_S':'s','DETECT_LEVEL_CACHE_MAX_AGE_S':'s',
   'DETECT_LEVEL_NMS_MIN_DX_PX':'px',
   'LOOTBUG_SCREEN_REUSE_AGE_S':'s','LOOTBUG_POST_CLICK_DELAY_S':'s',
   'LOOTBUG_TAP_JITTER_PX':'px',
-  'LOOTBUG_BONUS_TAP_JITTER_PX':'px','LOOTBUG_BONUS_DOUBLE_CLICK_DELAY_S':'s',
   /* workflows */
   'WF_INTERVAL_VARIANCE_PCT':'%',
   'WORKFLOWS_TAP_JITTER_PX':'px',
@@ -117,14 +133,15 @@ const FIELD_UNITS={
 
 /* Descriptions shown below certain sections */
 const SECTION_NOTES={
-  'screenshot_viewer':'Defines which files in <code>./temp/</code> are checked for the sidebar screenshot viewer. The <b>newest</b> matching file is shown. Edit as comma-separated filenames, e.g. <code>game_scr.png, freebie_scr.png</code>.',
+  'screenshot_capture':'All features capture full-device PNGs using separate Android files per slot and attempt. Only validated complete images replace the local cache. Failed fresh captures return no image, never an old fallback. Logs include request/capture IDs, slot, device, attempt, phase and elapsed time. Settings require a process restart.',
+  'screenshot_viewer':'Shows the newest valid PNG from <code>./temp/</code> without taking a new screenshot. Plain slot filenames only, e.g. <code>game_scr.png, freebie_scr.png</code>. The viewer can display an older last successful image during capture failures.',
   'adb':'<span style="color:var(--yellow)">\u26A0 DEVICE</span> is the <b>main device</b>. If unreachable, the bot tries <b>ADB_SCAN_PORTS</b> as fallbacks.',
   'startup_defaults':'Controls which features are <b>ON</b> or <b>OFF</b> when the bot starts, and which UI panels are visible. Requires <b>restart</b> to take effect.',
   'scroll':'The game requires a <b>drag</b> gesture (finger stays down). Higher <b>duration</b> = more drag-like. Too short = flick, ignored by the game. <b>SCROLL_DEFAULT_AREA</b> is used when a feature calls <code>scroll()</code> without an explicit area.',
   'running_detection':'Detects if the game is foregrounded by matching <code>game_running.png</code> in ROI. Cached screenshots younger than <b>CACHE_AGE</b>s are reused — no extra ADB pull.',
   'freebies':'<b>Auto-Freebies</b>: every <b>CHECK_INTERVAL</b>s, look for the freebie icon in <b>DETECT_ROI</b>. If found, open menu, scroll through <b>CLAIM_ROI</b> and tap claim.',
-  'lootbug_founders':'<b>Founders Lootbox</b>: checked once per Lootbug scan cycle. If a founders lootbox is detected in its ROI it is tapped and the popup dismissed automatically. <span style="color:var(--yellow)">&#x26A0; Only activate if you have purchased the Founders Bundle.</span>',
-  'lootbug':'<b>Auto-Lootbug</b>: every <b>CHECK_INTERVAL</b>s, scan <b>DETECT_ROI</b> for the Lootbug. If found, tap it (jitter), wait, then dismiss the popup via <b>close_menu.png</b> in <b>CLOSE_ROI</b>. Postponed if another feature is currently performing ingame actions.<br><b>Gem-Bonus</b> (optional): if <b>BUY_GEM_UPGRADES_ENABLED</b> and <code>images/Lootbug/bonus_tpl_*.png</code> matches inside <b>BONUS_DETECT_ROI</b>, double-tap <b>BONUS_BUY_ROI</b> instead of close — the 2x tap also dismisses the popup.',
+  'founders':'<b>FOUNDERS BUNDLE</b>: detects the Founders lootbox and taps it once. Independent switch and scan interval; shares the action lock with other features. Auto-start is configured under Startup Defaults. Only enable if you own the Founders Bundle. Settings require a bot restart.',
+  'lootbug':'<b>Auto-Lootbug</b>: every <b>CHECK_INTERVAL</b>s with random +/- <b>INTERVAL_VARIANCE_PCT</b>% (default 15%), scan <b>DETECT_ROI</b> for the Lootbug. The status countdown shows the actual scheduled next check. If found, tap it (jitter), wait, then search for <code>images/Lootbug/lootbug_buy_bonus.png</code> in <b>BONUS_BUY_ROI</b> and click the detected buy box once. Postponed if another feature is currently performing ingame actions. If the buy box is hidden by notifications, wait <b>BUY_RETRY</b>s and retry with a fresh screenshot until it is visible or Auto-Lootbug is disabled. The popup is never closed automatically. The action lock stays held while waiting.<br><b>Gem-Bonus selection</b>: disable Auto-Lootbug, wait for a Lootbug popup, select the bonuses you want in-game, then click <b>Buy</b>. The game remembers your selection. Enable Auto-Lootbug again afterwards.<br><b>Required in-game setting</b>: enable <b>Remove lootbug gem confirmation</b> so buying requires only one click.',
   'workflows':'<b>Workflows</b>: user-defined step sequences (taps, swipes, template clicks). Edit them in the <b>Workflows</b> tab above. Master "Auto WF" toggle pauses all scheduling and blocks manual triggers. Per-WF intervals get a global variance (set here) plus optional per-WF override.',
   'detect_level':'<b>Detect Level</b>: periodically scans <b>ROI</b> for digit templates in <code>images/level/</code> (digit_0_tpl.png … digit_9_tpl.png), composes 1-3 digits left-to-right into the current level (1-999). Consumed by workflow if-conditions <b>level_eq / level_gte / level_lte</b>. Disable here to grey out those conditions in the editor.',
 };
@@ -136,7 +153,8 @@ function renderSettings(data){
   let h='';
   for(const[section,vals]of Object.entries(data)){
     if(typeof vals!=='object'||vals===null)continue;
-    h+=`<div class="cfg-section"><div class="cfg-section-title" onclick="toggleCfgSection(this)">${section}</div><div class="cfg-fields">`;
+    const sectionLabel = section==='founders' ? 'FOUNDERS BUNDLE' : section==='startup_defaults' ? 'Startup Defaults' : section;
+    h+=`<div class="cfg-section"><div class="cfg-section-title" onclick="toggleCfgSection(this)">${sectionLabel}</div><div class="cfg-fields">`;
     if(SECTION_NOTES[section]){
       h+=`<div style="font-size:.58rem;color:var(--text-dim);padding:4px 0 6px;line-height:1.4">${SECTION_NOTES[section]}</div>`;
     }
@@ -168,19 +186,16 @@ function saveSettings(){
     const s=inp.dataset.section,k=inp.dataset.key;
     if(!data[s])data[s]={};
     let v=inp.value.trim();
-    /* Normalize decimal comma → dot (German locale fix) */
-    if(inp.dataset.ftype!=='array' && v!=='true' && v!=='false'){
-      v=v.replace(',','.');
-    }
+    const original=settingsData[s]?.[k];
     if(inp.dataset.ftype==='array'){
-      v=v.split(',').map(x=>{const n=parseFloat(x.trim().replace(',','.'));return isNaN(n)?x.trim():n});
-    }else if(v==='true')v=true;
-    else if(v==='false')v=false;
-    else if(!isNaN(v)&&v!=='')v=parseFloat(v);
+      const numeric=Array.isArray(original)&&typeof original[0]==='number';
+      v=v===''?[]:v.split(',').map(x=>numeric?Number(x.trim()):x.trim());
+    }else if(typeof original==='boolean')v=(v==='true');
+    else if(typeof original==='number')v=v===''?null:Number(v.replace(',','.'));
 
     data[s][k]=v;
   });
-  fetch('/api/config/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(r=>r.json()).then(r=>{if(r.ok)showToast('Settings saved \u2705');else showToast('Save failed: '+(r.error||''),true)}).catch(e=>showToast('Save error: '+e,true));
+  fetch('/api/config/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(r=>r.json()).then(r=>{if(r.ok)showToast('Settings saved \u2705 — restart the bot to apply');else showToast('Save failed: '+(r.error||''),true)}).catch(e=>showToast('Save error: '+e,true));
 }
 
 loadSettings();

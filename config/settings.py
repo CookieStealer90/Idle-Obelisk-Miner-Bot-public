@@ -50,8 +50,15 @@ ADB_SCAN_PORTS = [
 ADB_CONNECT_TIMEOUT = 5
 ADB_MAX_RETRIES = 2
 
+# Legacy base path: captures use its directory with a unique slot/attempt name.
 REMOTE_SCREEN = "/sdcard/__scr.png"
 LOCAL_SCREEN = str(BASE_DIR / "__scr.png")
+
+# ========= Screenshot capture (all features, full-device PNGs) =========
+SCREENSHOT_CAPTURE_ATTEMPTS = 2       # complete captures, separate from ADB retries
+SCREENSHOT_RETRY_DELAY_S = 0.2
+SCREENSHOT_LOG_LEVEL = "TXT"          # capture results, retries, phase errors
+SCREENSHOT_LOG_CACHE_HITS = False     # verbose diagnostics; enable temporarily
 
 # ========= Exception Handling =========
 SUPPRESS_EXCEPTIONS = True
@@ -109,13 +116,14 @@ FREEBIES_POST_CLAIM_DELAY_S = 1.0   # wait after claim before searching close bu
 
 # ========= Lootbug feature =========
 # A "Lootbug" can spawn in-game; clicking it grants a temporary buff or gems.
-# We don't track the reward — we just detect, click, and dismiss the popup.
+# Detect, click and buy using the selection remembered by the game.
 LOOTBUG_ENABLED_DEFAULT = False
 LOOTBUG_CHECK_INTERVAL_S = 180.0       # 3 min between scans
+LOOTBUG_INTERVAL_VARIANCE_PCT = 15.0   # random +/- percent per regular scan interval
 LOOTBUG_BUSY_RETRY_S = 15.0            # retry sooner if action lock is busy
 
 LOOTBUG_TEMPLATE_GLOB = "Lootbug/lootbug_tpl_*.png"   # ANY match within ROI counts
-LOOTBUG_DETECT_ROI = (253, 650, 463, 952)
+LOOTBUG_DETECT_ROI = (323, 730, 665, 877)
 LOOTBUG_MATCH_THRESHOLD = 0.8
 
 # Screenshot cache: reuse game_scr.png if younger than this; else pull a fresh
@@ -125,22 +133,14 @@ LOOTBUG_SHARED_SCREEN_SLOT = "game_scr"   # cache slot to piggy-back on
 LOOTBUG_OWN_SCREEN_SLOT = "lootbug_scr"   # slot used when forced fresh pull
 
 LOOTBUG_TAP_JITTER_PX = 4
-LOOTBUG_POST_CLICK_DELAY_S = 1.2       # wait between lootbug-tap and close-tap
+LOOTBUG_POST_CLICK_DELAY_S = 1.2       # wait between lootbug-tap and buy-box scan
 
-# Close button (popup that opens after tapping the lootbug)
-LOOTBUG_CLOSE_TEMPLATE = "Lootbug/lootbug_close_menu.png"
-LOOTBUG_CLOSE_ROI = (395, 987, 503, 1085)
-
-# Optional gem-bonus purchase after lootbug click.
-# If enabled AND one of bonus_tpl_*.png is detected in BONUS_DETECT_ROI,
-# we double-tap BONUS_BUY_ROI (two taps close the popup as a side-effect —
-# no explicit close needed).
-LOOTBUG_BUY_GEM_UPGRADES_ENABLED = False
-LOOTBUG_BONUS_TEMPLATE_GLOB = "Lootbug/bonus_tpl_*.png"
-LOOTBUG_BONUS_DETECT_ROI = (540, 497, 693, 640)
-LOOTBUG_BONUS_BUY_ROI = (540, 846, 695, 914)
+# The game remembers the bonus selection. Enable "Remove lootbug gem confirmation"
+# in-game so a single click on the detected buy box completes the purchase.
+LOOTBUG_BONUS_BUY_TEMPLATE = "Lootbug/lootbug_buy_bonus.png"
+LOOTBUG_BONUS_BUY_ROI = (310, 370, 505, 672)
 LOOTBUG_BONUS_TAP_JITTER_PX = 4
-LOOTBUG_BONUS_DOUBLE_CLICK_DELAY_S = 0.1
+LOOTBUG_BUY_RETRY_S = 3.0             # fresh screenshot retry while Buy is obscured
 
 # Per-event log levels — set to FULL while testing, lower later.
 LOOTBUG_LOG_LEVEL = "TXT"             # general worker / scan messages
@@ -149,12 +149,18 @@ LOOTBUG_LOG_LEVEL_CLICK = "FULL"       # actual taps performed
 LOOTBUG_LOG_LEVEL_BUSY = "FULL"        # postponed because action lock held
 LOOTBUG_LOG_LEVEL_BONUS = "FULL"       # bonus-purchase events
 
-# Founders lootbox sub-feature (only for Founders Bundle owners)
-# Checked once per lootbug scan cycle, independently of the regular lootbug.
-LOOTBUG_FOUNDERS_ENABLED = False
-LOOTBUG_FOUNDERS_DETECT_ROI = (110, 201, 753, 1021)
-LOOTBUG_FOUNDERS_TEMPLATE = "Lootbug/founders_bundle_tpl.png"
-LOOTBUG_FOUNDERS_LOG_LEVEL = "FULL"    # founders detection + tap events
+# ========= Founders feature (independent of Lootbug) =========
+FOUNDERS_ENABLED = False             # startup default; runtime toggle is separate
+FOUNDERS_CHECK_INTERVAL_S = 180.0
+FOUNDERS_BUSY_RETRY_S = 15.0
+FOUNDERS_DETECT_ROI = (110, 201, 753, 1021)
+FOUNDERS_TEMPLATE = "Founders/founders_bundle_tpl.png"
+FOUNDERS_MATCH_THRESHOLD = 0.8
+FOUNDERS_SCREEN_REUSE_AGE_S = 5.0
+FOUNDERS_TAP_JITTER_PX = 4
+FOUNDERS_LOG_LEVEL = "FULL"
+FOUNDERS_LOG_LEVEL_CLICK = "FULL"
+FOUNDERS_LOG_LEVEL_BUSY = "FULL"
 
 # ========= Detect Level feature =========
 # Scans a small ROI for digit templates (images/level/digit_*_tpl.png),

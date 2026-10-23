@@ -271,7 +271,7 @@ function collectWorkflows(){
       let v = el.value;
       if(el.tagName==='SELECT' && (v==='true'||v==='false')) v = (v==='true');
       else if(ft==='num' && v!=='') v = parseFloat(v);
-      else if(ft==='roi') v = v.split(',').map(s=>{const n=parseFloat(s.trim());return isNaN(n)?0:n;});
+      else if(ft==='roi') v = v.trim()==='' ? [] : v.split(',').map(s=>Number(s.trim()));
       else if(ft==='num' && v==='') v = null;
       step[fieldKey] = v;
     });
@@ -293,7 +293,7 @@ function collectWorkflows(){
         const ft = el.dataset.ftype;
         if(ft==='num' && v!=='') v = parseFloat(v);
         else if(ft==='num' && v==='') v = null;
-        else if(ft==='roi') v = v.split(',').map(s=>{const n=parseFloat(s.trim());return isNaN(n)?0:n;});
+        else if(ft==='roi') v = v.trim()==='' ? [] : v.split(',').map(s=>Number(s.trim()));
         condObj[k] = v;
       });
     });

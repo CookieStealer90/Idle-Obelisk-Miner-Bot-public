@@ -53,21 +53,24 @@ def run():
                                          "WORKFLOWS_ENABLED_DEFAULT"])
     state.freebies_enabled = bool(getattr(_settings_mod, "FREEBIES_ENABLED_DEFAULT", True))
     state.lootbug_enabled = bool(getattr(_settings_mod, "LOOTBUG_ENABLED_DEFAULT", False))
-    state.lootbug_buy_bonus = bool(getattr(_settings_mod, "LOOTBUG_BUY_GEM_UPGRADES_ENABLED", False))
+    state.founders_enabled = bool(getattr(_settings_mod, "FOUNDERS_ENABLED", False))
     state.workflows_master_enabled = bool(getattr(_settings_mod, "WORKFLOWS_ENABLED_DEFAULT", False))
     state.detect_level_enabled = bool(getattr(_settings_mod, "DETECT_LEVEL_ENABLED", True))
 
     # Start features
     from features import freebies as freebies_feature
     from features import lootbug as lootbug_feature
+    from features import founders as founders_feature
     from features import workflows as workflows_feature
     from features import detect_level as detect_level_feature
     freebies_feature.start()
     lootbug_feature.start()
+    founders_feature.start()
     workflows_feature.start()
     detect_level_feature.start()
     bot_log(f"[STARTUP] Freebies feature armed (enabled={state.freebies_enabled})")
     bot_log(f"[STARTUP] Lootbug feature armed (enabled={state.lootbug_enabled})")
+    bot_log(f"[STARTUP] Founders feature armed (enabled={state.founders_enabled})")
     bot_log(f"[STARTUP] Workflows feature armed (master={state.workflows_master_enabled})")
 
     # Main loop: central game-running watchdog + command dispatch.
@@ -82,6 +85,8 @@ def run():
             freebies_feature.toggle()
         elif c == "lootbug_toggle":
             lootbug_feature.toggle()
+        elif c == "founders_toggle":
+            founders_feature.toggle()
         elif c == "detect_level_toggle":
             detect_level_feature.toggle()
         elif c == "detect_level_now":
@@ -90,7 +95,7 @@ def run():
             workflows_feature.toggle_master()
         elif c == "reload_cfg":
             workflows_feature.reload_workflows()
-            bot_log("[CMD] reload_cfg: settings applied on next process restart; workflows reloaded now")
+            bot_log("[CMD] reload_cfg: settings require process restart; workflow reload requested")
         elif c.startswith("wf_auto:"):
             workflows_feature.toggle_wf(c.split(":", 1)[1])
         elif c.startswith("wf_run:"):

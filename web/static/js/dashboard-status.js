@@ -25,6 +25,13 @@ function _ttb_syncTabTitleAfterWebUI(isRunning){
 
 
 function updateStatus(d) {
+  const reloadEl = document.getElementById('workflow-reload-status');
+  if(reloadEl){
+    const status = d.workflows_reload_status;
+    reloadEl.textContent = status==='pending' ? ' Reload requested; waiting for an idle scheduler.'
+      : status==='applied' ? ' Reload completed.'
+      : status==='error' ? ' Reload failed: '+(d.workflows_reload_error||'unknown error') : '';
+  }
   const g = d.gems||{}, cd = d.cooldowns||{};
 
   const gameEl = document.getElementById('s-game');
@@ -38,6 +45,7 @@ function updateStatus(d) {
   const fb = d.freebies||{};
   const claims = fb.claimed||0;
   const diamonds = fb.diamonds||0;
+  document.getElementById('s-gem-val').title = 'Estimated gems from claim taps; reward not verified in game';
   /* Show total diamonds + claim count in parentheses, e.g. "28 💎 (1x)" */
   document.getElementById('s-gem-val').innerHTML = claims>0
     ? `${diamonds}<span class="ico">\u{1F48E}</span> <span style="font-size:.7em;color:var(--text-dim)">(${claims}x)</span>`
@@ -100,21 +108,12 @@ function updateStatus(d) {
   const lbNext = document.getElementById('s-lootbug-next');
   if(lbVal && lbNext){
     const clicks = lb.clicked||0;
-    const bonuses = lb.bonus_count||0;
     if(!lb.enabled){
       lbVal.innerHTML = `<span style="color:var(--red)">Off</span>`;
       lbVal.className = 'stat-value';
       lbNext.innerHTML = `<span style="color:var(--text-dim)">off</span>`;
-    } else if(lb.enabled && !lb.buy_bonus){
-      lbVal.innerHTML = `<span style="color:var(--orange)">Active</span> <span style="font-size:.7em;color:var(--text-dim)">(${clicks}x)</span>`;
-      lbVal.className = 'stat-value';
-      const rem = lb.next_check_remaining||0;
-      lbNext.innerHTML = rem>0
-        ? `<span style="color:var(--yellow)">next ${fmtSec(rem)}</span>`
-        : `<span style="color:var(--green)">Ready</span>`;
     } else {
-      const bonusSuffix = bonuses>0 ? ` <span style="font-size:.7em;color:var(--text-dim)">+${bonuses}\u{1F48E}</span>` : '';
-      lbVal.innerHTML = `<span style="color:var(--green)">Active</span><span class="ico">\u{1F48E}</span> <span style="font-size:.7em;color:var(--text-dim)">(${clicks}x)</span>${bonusSuffix}`;
+      lbVal.innerHTML = `<span style="color:var(--green)">Active</span> <span style="font-size:.7em;color:var(--text-dim)">(${clicks}x)</span>`;
       lbVal.className = 'stat-value';
       const rem = lb.next_check_remaining||0;
       lbNext.innerHTML = rem>0
@@ -123,6 +122,21 @@ function updateStatus(d) {
     }
   }
 
+  /* Independent Founders tile */
+  const founders = d.founders||{};
+  const foundersVal = document.getElementById('s-founders-val');
+  const foundersNext = document.getElementById('s-founders-next');
+  if(foundersVal && foundersNext){
+    foundersVal.innerHTML = founders.enabled
+      ? `<span style="color:var(--green)">Active</span> <span style="font-size:.7em;color:var(--text-dim)">(${founders.clicked||0}x)</span>`
+      : `<span style="color:var(--red)">Off</span>`;
+    const rem = founders.next_check_remaining||0;
+    foundersNext.innerHTML = !founders.enabled
+      ? `<span style="color:var(--text-dim)">off</span>`
+      : rem>0
+        ? `<span style="color:var(--yellow)">next ${fmtSec(rem)}</span>`
+        : `<span style="color:var(--green)">Ready</span>`;
+  }
 }
 
 function updateButtons(d) {
@@ -130,23 +144,11 @@ function updateButtons(d) {
   const fb=d.freebies||{};
   setBtn('btn-freebies',fb.enabled,'\uD83C\uDF81 Freebies');
   const lb=d.lootbug||{};
-  /* Tri-state: off (red) -> on without bonus (orange) -> on + bonus (green) */
-  let lbMode = 'off';
-  if(lb.enabled && !lb.buy_bonus) lbMode = 'partial';
-  else if(lb.enabled && lb.buy_bonus) lbMode = 'on';
-  const lbLabel = lb.founders_enabled ? '\uD83D\uDC1B Lootbug & Founders' : '\uD83D\uDC1B Lootbug';
-  setBtn3('btn-lootbug',lbMode,lbLabel);
+  setBtn('btn-lootbug',lb.enabled,'\uD83D\uDC1B Lootbug');
+  setBtn('btn-founders',(d.founders||{}).enabled,'\uD83D\uDCE6 FOUNDERS BUNDLE');
 }
 
 function setBtn(id,isOn,label){const el=document.getElementById(id);if(!el)return;el.textContent=label;el.classList.toggle('on',!!isOn);el.classList.toggle('off',!isOn)}
-
-function setBtn3(id,mode,label){
-  const el=document.getElementById(id);if(!el)return;
-  el.textContent=label;
-  el.classList.toggle('on',mode==='on');
-  el.classList.toggle('warn',mode==='partial');
-  el.classList.toggle('off',mode==='off');
-}
 
 /* ============ WORKFLOWS (dynamic) ============ */
 function updateWorkflows(d) {

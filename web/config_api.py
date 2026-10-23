@@ -2,10 +2,13 @@
 """
 /api/config/* endpoints for settings and workflows.
 """
-import json
 from pathlib import Path
 
 from flask import Blueprint, request, jsonify
+from config.user_overrides import normalize_user_settings
+from config.validation import validate_workflows
+from config.json_store import atomic_write_json, read_json
+from werkzeug.exceptions import BadRequest, UnsupportedMediaType
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -23,8 +26,7 @@ def settings_get():
     try:
         override_path = BASE_DIR / "config" / "user_settings.json"
         if override_path.exists():
-            with open(override_path, "r", encoding="utf-8") as f:
-                overrides = json.load(f)
+            overrides = normalize_user_settings(read_json(override_path))
         else:
             overrides = {}
 
@@ -42,7 +44,7 @@ def settings_get():
                 "screenshot_visible": True,
                 "freebies_enabled": getattr(s, "FREEBIES_ENABLED_DEFAULT", True),
                 "lootbug_enabled": getattr(s, "LOOTBUG_ENABLED_DEFAULT", False),
-                "lootbug_buy_bonus": getattr(s, "LOOTBUG_BUY_GEM_UPGRADES_ENABLED", False),
+                "FOUNDERS_ENABLED": s.FOUNDERS_ENABLED,
                 "workflows_enabled": getattr(s, "WORKFLOWS_ENABLED_DEFAULT", False),
                 "detect_level_enabled": getattr(s, "DETECT_LEVEL_ENABLED", True),
             },
@@ -85,24 +87,31 @@ def settings_get():
                 "FREEBIES_CLOSE_ROI": list(s.FREEBIES_CLOSE_ROI),
                 "FREEBIES_POST_CLAIM_DELAY_S": s.FREEBIES_POST_CLAIM_DELAY_S,
             },
-            "lootbug_founders": {
-                "LOOTBUG_FOUNDERS_ENABLED": getattr(s, "LOOTBUG_FOUNDERS_ENABLED", False),
-                "LOOTBUG_FOUNDERS_LOG_LEVEL": getattr(s, "LOOTBUG_FOUNDERS_LOG_LEVEL", "FULL"),
+            "founders": {
+                "FOUNDERS_CHECK_INTERVAL_S": s.FOUNDERS_CHECK_INTERVAL_S,
+                "FOUNDERS_BUSY_RETRY_S": s.FOUNDERS_BUSY_RETRY_S,
+                "FOUNDERS_DETECT_ROI": list(s.FOUNDERS_DETECT_ROI),
+                "FOUNDERS_TEMPLATE": s.FOUNDERS_TEMPLATE,
+                "FOUNDERS_MATCH_THRESHOLD": s.FOUNDERS_MATCH_THRESHOLD,
+                "FOUNDERS_SCREEN_REUSE_AGE_S": s.FOUNDERS_SCREEN_REUSE_AGE_S,
+                "FOUNDERS_TAP_JITTER_PX": s.FOUNDERS_TAP_JITTER_PX,
+                "FOUNDERS_LOG_LEVEL": s.FOUNDERS_LOG_LEVEL,
+                "FOUNDERS_LOG_LEVEL_CLICK": s.FOUNDERS_LOG_LEVEL_CLICK,
+                "FOUNDERS_LOG_LEVEL_BUSY": s.FOUNDERS_LOG_LEVEL_BUSY,
             },
             "lootbug": {
                 "LOOTBUG_CHECK_INTERVAL_S": s.LOOTBUG_CHECK_INTERVAL_S,
+                "LOOTBUG_INTERVAL_VARIANCE_PCT": s.LOOTBUG_INTERVAL_VARIANCE_PCT,
                 "LOOTBUG_BUSY_RETRY_S": s.LOOTBUG_BUSY_RETRY_S,
                 "LOOTBUG_DETECT_ROI": list(s.LOOTBUG_DETECT_ROI),
                 "LOOTBUG_MATCH_THRESHOLD": s.LOOTBUG_MATCH_THRESHOLD,
                 "LOOTBUG_SCREEN_REUSE_AGE_S": s.LOOTBUG_SCREEN_REUSE_AGE_S,
                 "LOOTBUG_TAP_JITTER_PX": s.LOOTBUG_TAP_JITTER_PX,
                 "LOOTBUG_POST_CLICK_DELAY_S": s.LOOTBUG_POST_CLICK_DELAY_S,
-                "LOOTBUG_CLOSE_ROI": list(s.LOOTBUG_CLOSE_ROI),
-                "LOOTBUG_BUY_GEM_UPGRADES_ENABLED": getattr(s, "LOOTBUG_BUY_GEM_UPGRADES_ENABLED", False),
-                "LOOTBUG_BONUS_DETECT_ROI": list(getattr(s, "LOOTBUG_BONUS_DETECT_ROI", (540, 497, 693, 640))),
-                "LOOTBUG_BONUS_BUY_ROI": list(getattr(s, "LOOTBUG_BONUS_BUY_ROI", (540, 846, 695, 914))),
+                "LOOTBUG_BUY_RETRY_S": s.LOOTBUG_BUY_RETRY_S,
+                "LOOTBUG_BONUS_BUY_TEMPLATE": s.LOOTBUG_BONUS_BUY_TEMPLATE,
+                "LOOTBUG_BONUS_BUY_ROI": list(s.LOOTBUG_BONUS_BUY_ROI),
                 "LOOTBUG_BONUS_TAP_JITTER_PX": getattr(s, "LOOTBUG_BONUS_TAP_JITTER_PX", 4),
-                "LOOTBUG_BONUS_DOUBLE_CLICK_DELAY_S": getattr(s, "LOOTBUG_BONUS_DOUBLE_CLICK_DELAY_S", 0.1),
                 "LOOTBUG_LOG_LEVEL": s.LOOTBUG_LOG_LEVEL,
                 "LOOTBUG_LOG_LEVEL_DETECT": s.LOOTBUG_LOG_LEVEL_DETECT,
                 "LOOTBUG_LOG_LEVEL_CLICK": s.LOOTBUG_LOG_LEVEL_CLICK,
@@ -111,6 +120,12 @@ def settings_get():
             },
             "screenshot_viewer": {
                 "SCREENSHOT_VIEWER_FILES": getattr(s, "SCREENSHOT_VIEWER_FILES", ["game_scr.png", "freebie_scr.png", "lootbug_scr.png"]),
+            },
+            "screenshot_capture": {
+                "SCREENSHOT_CAPTURE_ATTEMPTS": s.SCREENSHOT_CAPTURE_ATTEMPTS,
+                "SCREENSHOT_RETRY_DELAY_S": s.SCREENSHOT_RETRY_DELAY_S,
+                "SCREENSHOT_LOG_LEVEL": s.SCREENSHOT_LOG_LEVEL,
+                "SCREENSHOT_LOG_CACHE_HITS": s.SCREENSHOT_LOG_CACHE_HITS,
             },
             "scroll": {
                 "SCROLL_DEFAULT_AREA": list(s.SCROLL_DEFAULT_AREA),
@@ -142,12 +157,13 @@ def settings_get():
 def settings_save():
     """Save settings to user_settings.json."""
     try:
-        data = request.json
+        data = normalize_user_settings(request.json)
         override_path = BASE_DIR / "config" / "user_settings.json"
-        with open(override_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2)
-        _push_log("[CONFIG] Settings saved - Use Reload to apply")
-        return jsonify({"ok": True})
+        atomic_write_json(override_path, data)
+        _push_log("[CONFIG] Settings saved - Restart the bot to apply")
+        return jsonify({"ok": True, "apply": "restart"})
+    except (TypeError, ValueError, BadRequest, UnsupportedMediaType) as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
@@ -158,8 +174,10 @@ def settings_save():
 def workflows_get():
     """Return full workflow definitions."""
     try:
-        from config.config_workflows import WORKFLOWS
-        return jsonify(WORKFLOWS)
+        import config.config_workflows as workflow_config
+        from config.app_state import workflows_lock
+        with workflows_lock:
+            return jsonify(workflow_config.WORKFLOWS)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -168,12 +186,13 @@ def workflows_get():
 def workflows_save():
     """Save workflow definitions to user_workflows.json."""
     try:
-        data = request.json
+        data = validate_workflows(request.json)
         override_path = BASE_DIR / "config" / "user_workflows.json"
-        with open(override_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2)
+        atomic_write_json(override_path, data)
         _push_log("[CONFIG] Workflows saved - Use Reload to apply")
-        return jsonify({"ok": True})
+        return jsonify({"ok": True, "apply": "reload"})
+    except (TypeError, ValueError, BadRequest, UnsupportedMediaType) as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
@@ -220,6 +239,8 @@ def gem_stats_manual_add():
         gem_type = request.json.get("type", "gem")
         gs = get_gem_statistics()
         amount = gs.record_claim(gem_type)
+        if amount is None:
+            return jsonify({"ok": False, "error": "Freebies inactive"}), 409
         return jsonify({"ok": True, "amount": amount})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500

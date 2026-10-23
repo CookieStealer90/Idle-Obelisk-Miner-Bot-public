@@ -1,43 +1,108 @@
-# Python
-__pycache__/
-*.pyc
+# Local settings, statistics and secrets (all directories, including backups).
+# JSON files are intentionally excluded project-wide; no example-file exceptions.
+*.[jJ][sS][oO][nN]
+*.[jJ][sS][oO][nN].*
+*.[jJ][sS][oO][nN][lL]
+*.[jJ][sS][oO][nN][lL].*
+*.[jJ][sS][oO][nN]5
+*.[jJ][sS][sS][oO][nN]
+.env
+.env.*
+*.env
+*.pem
+*.key
+*.pfx
+*.p12
+*.keystore
+*.jks
+.ssh/
+id_rsa*
+id_ed25519*
 
-# Claude
-.claude/
-CLAUDE.md
-
-#ps logo
-*.psd
-
-# json custom config
-*.json
-
-# Logs
-*.log*
-*.rar
-
-
-# temp images
+# Runtime screenshots and temporary captures.
+# Keep game-detection templates in images/ and README illustrations in images/assets/.
 temp/
-*_scr.png
-user_workflows.py.txt
+tmp/
+screenshot/
+screenshots/
+captures/
+debug_screenshots/
+*_[sS][cC][rR].*
+[sS][cC][rR][eE][eE][nN][sS][hH][oO][tT]*.[pP][nN][gG]
+[sS][cC][rR][eE][eE][nN][sS][hH][oO][tT]*.[jJ][pP][gG]
+[sS][cC][rR][eE][eE][nN][sS][hH][oO][tT]*.[jJ][pP][eE][gG]
+[sS][cC][rR][eE][eE][nN][sS][hH][oO][tT]*.[wW][eE][bB][pP]
 
-# Temp files
-*.tmp
-*.bak
-*.old
-To-do and maybes.txt
+# Logs, rotated logs and diagnostic dumps.
+*.[lL][oO][gG]*
+logs/
+log/
+*.stackdump
+*.dmp
 
-# IDE
+# Python bytecode, environments, caches and test output.
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+ENV/
+.python-version
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.pyre/
+.hypothesis/
+.tox/
+.nox/
+.cache/
+cache/
+caches/
+.coverage
+.coverage.*
+htmlcov/
+coverage/
+coverage.xml
+junit.xml
+*.egg-info/
+.eggs/
+build/
+dist/
+node_modules/
+.npm/
+
+# Local assistant and editor state.
+.claude/
+.codex/
+.agents/
+CLAUDE.md
 .vscode/
 .idea/
+*.code-workspace
 
-# Environment files
-.env
+# Temporary files, backups, archives and editable artwork.
+*.tmp
+*.temp
+*.bak
+*.old
+*.orig
+*.rej
+*.swp
+*.swo
+*~
+*.rar
+*.zip
+*.7z
+*.tar
+*.tar.gz
+*.tgz
+*.psd
+user_workflows.py.txt
+To-do and maybes.txt
 
-# OS
+# Operating-system metadata.
 Thumbs.db
+Desktop.ini
 .DS_Store
-
-#ssl
-.pem
+$RECYCLE.BIN/

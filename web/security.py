@@ -1,57 +1,69 @@
-# web/security.py - LAN access control & origin checking
+"""LAN access and exact browser origins; forwarded headers are untrusted."""
 import os
 import ipaddress
-from urllib.parse import urlparse
+from urllib.parse import urlsplit
 from flask import request, jsonify
 
 
 def _get_client_ip() -> str:
-    remote = (request.remote_addr or "").strip()
-    try:
-        if remote:
-            ip = ipaddress.ip_address(remote)
-            peer_is_local = ip.is_private or ip.is_loopback or ip.is_link_local
-        else:
-            peer_is_local = False
-    except Exception:
-        peer_is_local = False
-
-    if peer_is_local:
-        xff = (request.headers.get("X-Forwarded-For") or "").split(",")[0].strip()
-        if xff:
-            return xff
-    return remote
+    return (request.remote_addr or "").strip()
 
 
 def _is_private_or_local_ip(ip_str: str) -> bool:
     try:
         ip = ipaddress.ip_address(ip_str)
-        if ip.version == 4:
-            return bool(ip.is_private or ip.is_loopback or ip.is_link_local)
-        return bool(ip.is_loopback or ip.is_link_local or ip.is_private)
-    except Exception:
+        if getattr(ip, "ipv4_mapped", None) is not None:
+            ip = ip.ipv4_mapped
+        return bool(ip.is_loopback or ip.is_link_local or ip.is_private) and not (ip.is_unspecified or ip.is_multicast)
+    except ValueError:
         return False
+
+
+def _origin_tuple(url):
+    try:
+        parsed = urlsplit(url)
+        if (parsed.scheme not in ("http", "https") or not parsed.hostname
+                or parsed.username is not None or parsed.password is not None
+                or parsed.path not in ("", "/") or parsed.query or parsed.fragment):
+            return None
+        return (parsed.scheme, parsed.hostname.lower(),
+                parsed.port if parsed.port is not None else (443 if parsed.scheme == "https" else 80))
+    except (ValueError, TypeError):
+        return None
+
+
+def socketio_origin_allowed(origin, environ):
+    """Engine.IO callback, also used by HTTP and Socket.IO event checks.
+
+    LAN clients open the server's URL; their own IPs are not origins.
+    Missing Origin is allowed for local scripts, subject to IP restrictions.
+    """
+    if environ.get("HTTP_SEC_FETCH_SITE") == "cross-site":
+        return False
+    if origin is None:
+        return True
+    expected = _origin_tuple(f"{environ.get('wsgi.url_scheme', 'http')}://{environ.get('HTTP_HOST', '')}")
+    actual = _origin_tuple(origin)
+    return actual is not None and expected is not None and actual == expected
 
 
 def _is_same_origin() -> bool:
-    origin = request.headers.get("Origin")
-    if not origin:
-        return True
-    if origin == "null":
-        return True
-    try:
-        o = urlparse(origin)
-        if o.scheme not in ("http", "https"):
+    if not socketio_origin_allowed(request.headers.get("Origin"), request.environ):
+        return False
+    if "Origin" not in request.headers:
+        referer = request.headers.get("Referer")
+        if referer:
+            try:
+                parsed = urlsplit(referer)
+                origin = f"{parsed.scheme}://{parsed.netloc}"
+            except ValueError:
+                return False
+            if not socketio_origin_allowed(origin, request.environ):
+                return False
+        # Refuse originless HTML form mutations. JSON scripts remain usable.
+        if request.method not in ("GET", "HEAD", "OPTIONS") and not request.is_json:
             return False
-        origin_host = (o.hostname or "").lower()
-        req_host = (request.host or "").rsplit(":", 1)[0].lower()
-        if origin_host == req_host:
-            return True
-        if _is_private_or_local_ip(origin_host):
-            return True
-        return False
-    except Exception:
-        return False
+    return True
 
 
 def _public_access_enabled() -> bool:

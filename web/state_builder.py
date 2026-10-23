@@ -18,18 +18,23 @@ def build_state_dict():
     """Build state dict for the web UI."""
     try:
         import config.app_state as state
-        import config.settings as s
-        from config.config_workflows import WORKFLOWS
+        import config.config_workflows as workflow_config
         from core.adb_helper import get_active_device, _connected
 
         now = time.time()
 
         # Build workflows list (sorted by user-defined order)
         wf_list = []
-        items = [(slug, wf) for slug, wf in WORKFLOWS.items() if isinstance(wf, dict)]
+        with state.workflows_lock:
+            items = [(slug, wf) for slug, wf in workflow_config.WORKFLOWS.items() if isinstance(wf, dict)]
+            runtime = {slug: dict(rt) for slug, rt in state.workflows.items()}
+            running = state.workflows_running
+            master_enabled = state.workflows_master_enabled
+            reload_status = state.workflows_reload_status
+            reload_error = state.workflows_reload_error
         items.sort(key=lambda kv: (int(kv[1].get("order", 999)), kv[0]))
         for slug, wf in items:
-            rt = state.workflows.get(slug, {})
+            rt = runtime.get(slug, {})
             next_due = float(rt.get("next_due_ts", 0.0))
             wf_list.append({
                 "slug": slug,
@@ -44,7 +49,7 @@ def build_state_dict():
                 "last_run_ts": float(rt.get("last_run_ts", 0.0)),
                 "last_status": rt.get("last_status", ""),
                 "run_count": int(rt.get("run_count", 0)),
-                "running": (state.workflows_running == slug),
+                "running": (running == slug),
                 "step_count": len([st for st in (wf.get("steps") or []) if not st.get("_disabled")]),
             })
 
@@ -59,9 +64,11 @@ def build_state_dict():
             "cooldowns": {
                 "normal_remaining": max(0, int(state.gem_cooldown_until - now)),
             },
-            "workflows_master_enabled": bool(getattr(state, "workflows_master_enabled", False)),
+            "workflows_master_enabled": bool(master_enabled),
             "workflows": wf_list,
-            "workflows_running": getattr(state, "workflows_running", None),
+            "workflows_running": running,
+            "workflows_reload_status": reload_status,
+            "workflows_reload_error": reload_error,
             "gem_statistics_enabled": getattr(state, 'gem_statistics_enabled', True),
             "screenshot_visible": getattr(state, 'screenshot_visible', True),
             "gem_statistics": _get_gem_statistics() if getattr(state, 'gem_statistics_enabled', True) else {},
@@ -90,14 +97,18 @@ def build_state_dict():
             },
             "lootbug": {
                 "enabled": getattr(state, 'lootbug_enabled', False),
-                "buy_bonus": getattr(state, 'lootbug_buy_bonus', False),
                 "clicked": getattr(state, 'lootbug_clicked_count', 0),
                 "bonus_count": getattr(state, 'lootbug_bonus_count', 0),
                 "last_click_ts": getattr(state, 'lootbug_last_click_ts', 0.0),
                 "next_check_ts": getattr(state, 'lootbug_next_check_ts', 0.0),
                 "next_check_remaining": max(0, int(getattr(state, 'lootbug_next_check_ts', 0.0) - now)),
-                "founders_enabled": getattr(s, 'LOOTBUG_FOUNDERS_ENABLED', False),
-                "founders_count": getattr(state, 'lootbug_founders_count', 0),
+            },
+            "founders": {
+                "enabled": state.founders_enabled,
+                "clicked": state.founders_clicked_count,
+                "last_click_ts": state.founders_last_click_ts,
+                "next_check_ts": state.founders_next_check_ts,
+                "next_check_remaining": max(0, int(state.founders_next_check_ts - now)),
             },
         }
     except Exception as e:

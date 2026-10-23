@@ -3,23 +3,25 @@
 Periodically checks whether a Lootbug is on screen and taps it.
 
 Flow:
-    1. Wait LOOTBUG_CHECK_INTERVAL_S between scans.
+    1. Wait LOOTBUG_CHECK_INTERVAL_S +/- LOOTBUG_INTERVAL_VARIANCE_PCT between scans.
     2. Skip the tick if the game isn't running.
     3. Try to acquire the global ingame_action_lock (non-blocking). If another
        feature is currently performing taps/scrolls, postpone — retry after
-       LOOTBUG_BUSY_RETRY_S without resetting the main interval.
+       LOOTBUG_BUSY_RETRY_S.
     4. Reuse temp/game_scr.png if younger than LOOTBUG_SCREEN_REUSE_AGE_S.
        Otherwise pull a fresh frame into temp/lootbug_scr.png.
     5. Match LOOTBUG_TEMPLATE inside LOOTBUG_DETECT_ROI. No hit -> done.
     6. Tap the matched lootbug (jitter), wait LOOTBUG_POST_CLICK_DELAY_S,
-       then look for close_menu.png inside LOOTBUG_CLOSE_ROI and tap it
-       to dismiss the resulting popup.
+       then find lootbug_buy_bonus.png inside LOOTBUG_BONUS_BUY_ROI and
+       click it once. If obscured, retry with fresh screenshots until found
+       or the feature is disabled. Never click Close.
 
 The worker runs in its own daemon thread, gated by `state.lootbug_enabled`
 (toggleable via WebUI).
 """
 import glob
 import os
+import random
 import threading
 import time
 
@@ -28,7 +30,7 @@ import config.settings as s
 from config.settings import BASE_DIR
 
 from core.file_logger import bot_log
-from core.screen_cache import get_screen
+from core.screen_cache import get_screen, get_cached_screen
 from core.vision import find_template
 from core.tapper import tap
 from core.game_state import is_game_running
@@ -51,7 +53,7 @@ def _get_screen_for_scan():
     own_slot = getattr(s, "LOOTBUG_OWN_SCREEN_SLOT", "lootbug_scr")
     max_age = float(getattr(s, "LOOTBUG_SCREEN_REUSE_AGE_S", 5.0))
 
-    img, _, _ = get_screen(shared_slot, max_age=max_age, force=False)
+    img, _, _ = get_cached_screen(shared_slot, max_age=max_age)
     if img is not None:
         return img
     img, _, _ = get_screen(own_slot, max_age=0.0, force=True)
@@ -105,50 +107,43 @@ def _click(cx: int, cy: int, what: str):
     j = int(getattr(s, "LOOTBUG_TAP_JITTER_PX", 4))
     _log(f"[LOOTBUG] tap {what} at ({cx},{cy}) jitter=+/-{j}px",
          "LOOTBUG_LOG_LEVEL_CLICK")
-    tap(cx, cy, jitter=j)
+    ok = tap(cx, cy, jitter=j)
+    if not ok:
+        _log(f"[LOOTBUG] tap failed: {what} at ({cx},{cy})", "LOOTBUG_LOG_LEVEL_CLICK")
+    return ok
 
 
-def _close_popup(popup_img, thr: float, label: str = "close-popup"):
-    """Look for the close button and tap it. Returns True if found."""
-    close_roi = tuple(getattr(s, "LOOTBUG_CLOSE_ROI", (395, 987, 503, 1085)))
-    close_tpl = getattr(s, "LOOTBUG_CLOSE_TEMPLATE", "Lootbug/lootbug_close_menu.png")
-    cm = find_template(popup_img, close_tpl, roi=close_roi, threshold=thr)
-    if cm["found"]:
-        _click(cm["cx"], cm["cy"], label)
-        return True
+def _buy_when_visible(thr: float) -> bool:
+    """Wait out notifications while retaining the caller's action lock."""
+    while state.lootbug_enabled and not _stop_evt.is_set():
+        popup_img = _fresh_own_screen()
+        if popup_img is not None:
+            bm = find_template(popup_img, s.LOOTBUG_BONUS_BUY_TEMPLATE,
+                               roi=tuple(s.LOOTBUG_BONUS_BUY_ROI), threshold=thr)
+            if bm["found"]:
+                jitter = int(s.LOOTBUG_BONUS_TAP_JITTER_PX)
+                _log(f"[LOOTBUG] buy box detected (score={bm['score']:.3f}) "
+                     f"-> single tap at ({bm['cx']},{bm['cy']})",
+                     "LOOTBUG_LOG_LEVEL_BONUS")
+                if not state.lootbug_enabled or _stop_evt.is_set():
+                    return False
+                if tap(bm["cx"], bm["cy"], jitter=jitter):
+                    state.lootbug_bonus_count = getattr(state, "lootbug_bonus_count", 0) + 1
+                    return True
+                _log("[LOOTBUG] buy tap failed -> retrying", "LOOTBUG_LOG_LEVEL_BONUS")
+            else:
+                _log(f"[LOOTBUG] buy box obscured/not found (score={bm['score']:.3f}) -> retrying",
+                     "LOOTBUG_LOG_LEVEL_BONUS")
+        else:
+            _log("[LOOTBUG] no buy screenshot -> retrying", "LOOTBUG_LOG_LEVEL_BONUS")
+        delay = max(0.1, float(s.LOOTBUG_BUY_RETRY_S))
+        state.lootbug_next_check_ts = time.time() + delay
+        _sleep_interruptible(delay)
     return False
 
 
-def _check_founders(img, thr: float) -> bool:
-    """Check for the founders lootbox and tap it if present. Returns True if clicked."""
-    roi = tuple(getattr(s, "LOOTBUG_FOUNDERS_DETECT_ROI", (310, 495, 500, 905)))
-    tpl = getattr(s, "LOOTBUG_FOUNDERS_TEMPLATE", "Lootbug/founders_bundle_tpl.png")
-    m = find_template(img, tpl, roi=roi, threshold=float(getattr(s, "LOOTBUG_MATCH_THRESHOLD", 0.8)))
-    if not m["found"]:
-        _log(f"[LOOTBUG] founders: not present (score={m['score']:.3f})",
-             "LOOTBUG_FOUNDERS_LOG_LEVEL")
-        return False
-
-    _log(f"[LOOTBUG] founders lootbox detected (score={m['score']:.3f}) -> clicking",
-         "LOOTBUG_FOUNDERS_LOG_LEVEL")
-    _click(m["cx"], m["cy"], "founders-lootbox")
-    state.lootbug_founders_count = getattr(state, "lootbug_founders_count", 0) + 1
-
-    time.sleep(float(getattr(s, "LOOTBUG_POST_CLICK_DELAY_S", 1.2)))
-    popup_img = _fresh_own_screen()
-    if popup_img is None:
-        _log("[LOOTBUG] founders: no screenshot for close -> popup may stay open",
-             "LOOTBUG_FOUNDERS_LOG_LEVEL")
-        return True
-
-    if not _close_popup(popup_img, thr, "close-founders-popup"):
-        _log(f"[LOOTBUG] founders: close button NOT found -> popup may stay open",
-             "LOOTBUG_FOUNDERS_LOG_LEVEL")
-    return True
-
-
 def _run_scan_cycle() -> bool:
-    """Detect + click + dismiss lootbug (and optionally founders lootbox).
+    """Detect and click Lootbug, then wait for and click its buy box.
     Returns True if anything was clicked."""
     img = _get_screen_for_scan()
     if img is None:
@@ -167,56 +162,18 @@ def _run_scan_cycle() -> bool:
     else:
         _log(f"[LOOTBUG] lootbug detected via {m.get('template')} (score={m['score']:.3f}) -> clicking",
              "LOOTBUG_LOG_LEVEL_DETECT")
-        _click(m["cx"], m["cy"], "lootbug")
+        if not _click(m["cx"], m["cy"], "lootbug"):
+            return False
 
         state.lootbug_clicked_count = getattr(state, "lootbug_clicked_count", 0) + 1
         state.lootbug_last_click_ts = time.time()
         lootbug_clicked = True
 
-        # Wait briefly for the popup to appear
-        time.sleep(float(getattr(s, "LOOTBUG_POST_CLICK_DELAY_S", 1.2)))
-        popup_img = _fresh_own_screen()
-        if popup_img is None:
-            _log("[LOOTBUG] no screenshot for close -> popup may stay open")
-        else:
-            # Optional gem-bonus purchase
-            bonus_used = False
-            if getattr(state, "lootbug_buy_bonus", False):
-                bonus_roi = tuple(getattr(s, "LOOTBUG_BONUS_DETECT_ROI", (540, 497, 693, 640)))
-                bm = _find_any_template(popup_img, bonus_roi, thr,
-                                        pattern_attr="LOOTBUG_BONUS_TEMPLATE_GLOB",
-                                        single_attr="LOOTBUG_BONUS_TEMPLATE")
-                if bm["found"]:
-                    buy_roi = tuple(getattr(s, "LOOTBUG_BONUS_BUY_ROI", (540, 846, 695, 914)))
-                    bx = (buy_roi[0] + buy_roi[2]) // 2
-                    by = (buy_roi[1] + buy_roi[3]) // 2
-                    bj = int(getattr(s, "LOOTBUG_BONUS_TAP_JITTER_PX", 4))
-                    delay = float(getattr(s, "LOOTBUG_BONUS_DOUBLE_CLICK_DELAY_S", 0.1))
-                    _log(f"[LOOTBUG] bonus matched via {bm.get('template')} "
-                         f"(score={bm['score']:.3f}) -> double-tap buy at ({bx},{by})",
-                         "LOOTBUG_LOG_LEVEL_BONUS")
-                    tap(bx, by, jitter=bj)
-                    time.sleep(delay)
-                    tap(bx, by, jitter=bj)
-                    state.lootbug_bonus_count = getattr(state, "lootbug_bonus_count", 0) + 1
-                    bonus_used = True
-                else:
-                    _log(f"[LOOTBUG] no desired bonus (best_score={bm['score']:.3f} "
-                         f"tpl={bm.get('template')}) -> fallback to close",
-                         "LOOTBUG_LOG_LEVEL_BONUS")
+        # Keep the action lock until Buy succeeds or Lootbug is disabled.
+        _sleep_interruptible(float(s.LOOTBUG_POST_CLICK_DELAY_S))
+        _buy_when_visible(thr)
 
-            if not bonus_used:
-                if not _close_popup(popup_img, thr):
-                    _log(f"[LOOTBUG] close button NOT found -> popup may stay open")
-
-    # --- Founders lootbox (checked on same initial frame; fresh frame if lootbug was tapped) ---
-    founders_clicked = False
-    if getattr(s, "LOOTBUG_FOUNDERS_ENABLED", False):
-        founders_img = _fresh_own_screen() if lootbug_clicked else img
-        if founders_img is not None:
-            founders_clicked = _check_founders(founders_img, thr)
-
-    return lootbug_clicked or founders_clicked
+    return lootbug_clicked
 
 
 def _try_run_with_lock() -> str:
@@ -244,6 +201,13 @@ def _try_run_with_lock() -> str:
     return "ok"
 
 
+def _next_scan_delay(interval: float) -> float:
+    """Sample once per regular cycle; the worker publishes this same delay."""
+    variance = min(100.0, max(0.0, float(s.LOOTBUG_INTERVAL_VARIANCE_PCT)))
+    factor = 1.0 + random.uniform(-variance, variance) / 100.0 if variance else 1.0
+    return max(0.1, interval * factor)
+
+
 def _worker():
     _log("[LOOTBUG] worker thread started")
     _sleep_interruptible(3.0)
@@ -260,18 +224,22 @@ def _worker():
                 continue
 
             result = _try_run_with_lock()
+            if not state.lootbug_enabled:
+                state.lootbug_next_check_ts = 0.0
+                continue
             if result == "busy":
                 wait = min(busy_retry, interval)
             elif result == "no_game":
                 wait = min(30.0, interval)
             else:
-                wait = interval
+                wait = _next_scan_delay(interval)
 
             state.lootbug_next_check_ts = time.time() + wait
             _sleep_interruptible(wait)
         except Exception as e:
             _log(f"[LOOTBUG] worker error: {type(e).__name__}: {e}")
-            time.sleep(5.0)
+            state.lootbug_next_check_ts = time.time() + 5.0 if state.lootbug_enabled else 0.0
+            _sleep_interruptible(5.0)
 
 
 def _sleep_interruptible(seconds: float):
@@ -291,29 +259,9 @@ def start():
 
 
 def toggle() -> bool:
-    """Tri-state cycle: OFF -> ON (no bonus) -> ON (with bonus) -> OFF.
-    Returns the resulting `lootbug_enabled` value.
-    Worker wakes immediately when transitioning into either ON state."""
-    enabled = bool(getattr(state, "lootbug_enabled", False))
-    buy = bool(getattr(state, "lootbug_buy_bonus", False))
-
-    if not enabled:
-        # OFF -> ON, no bonus
-        state.lootbug_enabled = True
-        state.lootbug_buy_bonus = False
-        label = "ON (no bonus)"
-    elif enabled and not buy:
-        # ON, no bonus -> ON + bonus
-        state.lootbug_buy_bonus = True
-        label = "ON (+ bonus)"
-    else:
-        # ON + bonus -> OFF
-        state.lootbug_enabled = False
-        state.lootbug_buy_bonus = False
-        label = "OFF"
-
-    if state.lootbug_enabled:
-        state.lootbug_next_check_ts = 0.0
-        _wake_evt.set()
-    _log(f"[LOOTBUG] toggled -> {label}")
+    """Toggle Lootbug on/off; also interrupt any pending buy retry."""
+    state.lootbug_enabled = not state.lootbug_enabled
+    state.lootbug_next_check_ts = 0.0
+    _wake_evt.set()
+    _log(f"[LOOTBUG] toggled -> {'ON' if state.lootbug_enabled else 'OFF'}")
     return state.lootbug_enabled

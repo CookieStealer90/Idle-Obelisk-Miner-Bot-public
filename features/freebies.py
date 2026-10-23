@@ -13,8 +13,8 @@ Flow (see README / chat spec):
     6. Pull a new screen, search FREEBIES_CLAIM_ROI for `freebie_claim.png`.
        If not found: scroll to top (multiple full scrolls), then slow-scroll
        down up to FREEBIES_SCROLL_ATTEMPTS times, re-matching each time.
-    7. On hit, tap the claim button -> log "Freebie Claimed +X Diamonds"
-       (X = FREEBIES_DIAMONDS_PER_CLAIM, currently only logged/counted).
+    7. On hit, tap the claim button and check the ADB result. Record an
+       estimated X Diamonds (FREEBIES_DIAMONDS_PER_CLAIM); reward unverified.
 
 The worker runs in its own daemon thread and is gated by
 `state.freebies_enabled` (toggleable via WebUI).
@@ -54,7 +54,10 @@ def _fresh_screen():
 def _click_with_log(cx: int, cy: int, what: str):
     j = int(getattr(s, "FREEBIES_TAP_JITTER_PX", 4))
     _log(f"[FREEBIES] tap {what} at ({cx},{cy}) jitter=+/-{j}px")
-    tap(cx, cy, jitter=j)
+    ok = tap(cx, cy, jitter=j)
+    if not ok:
+        _log(f"[FREEBIES] tap failed: {what} at ({cx},{cy})")
+    return ok
 
 
 def _scroll_to_top():
@@ -63,8 +66,11 @@ def _scroll_to_top():
     area = tuple(getattr(s, "FREEBIES_CLAIM_ROI", (645, 107, 835, 1472)))
     _log(f"[FREEBIES] scrolling to top ({pre}x fast, area={area})")
     for _ in range(pre):
-        scroll_down(area=area, speed="fast")  # finger moves DOWN -> list scrolls UP
+        if not scroll_down(area=area, speed="fast"):  # finger DOWN -> list UP
+            _log("[FREEBIES] scroll to top failed -> abort cycle")
+            return False
         time.sleep(0.15)
+    return True
 
 
 def _try_find_claim() -> dict:
@@ -105,7 +111,8 @@ def _run_claim_cycle() -> bool:
             return False
 
     _log(f"[FREEBIES] freebie available ({which} score={m['score']:.3f}) -> opening menu")
-    _click_with_log(m["cx"], m["cy"], "freebie-icon")
+    if not _click_with_log(m["cx"], m["cy"], "freebie-icon"):
+        return False
 
     # Give the menu a moment to open
     time.sleep(float(getattr(s, "FREEBIES_POST_OPEN_DELAY_S", 1.0)))
@@ -119,14 +126,17 @@ def _run_claim_cycle() -> bool:
         _log(f"[FREEBIES] claim button visible immediately (score={m['score']:.3f})")
     else:
         _log(f"[FREEBIES] claim button not visible (score={m['score']:.3f}) -> scrolling")
-        _scroll_to_top()
+        if not _scroll_to_top():
+            return False
         time.sleep(0.4)
         m = _try_find_claim()
         attempts = 0
         while (not m["found"]) and attempts < max_scroll_attempts:
             attempts += 1
             _log(f"[FREEBIES] slow-scroll searching attempt {attempts}/{max_scroll_attempts}")
-            scroll_up(area=claim_area, speed="slow")  # finger UP -> reveal below
+            if not scroll_up(area=claim_area, speed="slow"):
+                _log("[FREEBIES] search scroll failed -> abort cycle")
+                return False
             time.sleep(0.4)
             m = _try_find_claim()
 
@@ -134,19 +144,21 @@ def _run_claim_cycle() -> bool:
         _log(f"[FREEBIES] claim button NOT found after {max_scroll_attempts} scrolls -> abort cycle")
         return False
 
-    _click_with_log(m["cx"], m["cy"], "claim-button")
+    if not _click_with_log(m["cx"], m["cy"], "claim-button"):
+        return False
     amount = int(getattr(s, "FREEBIES_DIAMONDS_PER_CLAIM", 0))
     state.freebies_claimed_count = getattr(state, "freebies_claimed_count", 0) + 1
     state.freebies_diamonds_total = getattr(state, "freebies_diamonds_total", 0) + amount
     state.freebies_last_claim_ts = time.time()
     claimed_level = getattr(s, "FREEBIES_LOG_LEVEL_CLAIMED", getattr(s, "FREEBIES_LOG_LEVEL", "FULL"))
-    bot_log(f"[FREEBIES] Freebie Claimed +{amount} Diamonds (totals: {state.freebies_diamonds_total} gems / {state.freebies_claimed_count}x)", claimed_level)
+    bot_log(f"[FREEBIES] Claim tap sent; estimated +{amount} Diamonds (totals: {state.freebies_diamonds_total} estimated gems / {state.freebies_claimed_count}x; reward unverified)", claimed_level)
 
     # Record into Freebie-Gems statistics (survives restarts, tracked per hourly bucket)
     try:
         from features.gem_statistics import get_gem_statistics
         recorded = get_gem_statistics().record_claim("gem", amount=amount)
-        _log(f"[FREEBIES] Freebie-Gems stats updated (+{recorded})")
+        if recorded is not None:
+            _log(f"[FREEBIES] Freebie-Gems stats updated (+{recorded})")
     except Exception as e:
         _log(f"[FREEBIES] stats update failed: {type(e).__name__}: {e}")
 
@@ -158,7 +170,8 @@ def _run_claim_cycle() -> bool:
         close_tpl = getattr(s, "FREEBIES_CLOSE_TEMPLATE", "close_menu.png")
         cm = find_template(close_img, close_tpl, roi=close_roi, threshold=thr)
         if cm["found"]:
-            _click_with_log(cm["cx"], cm["cy"], "close-menu")
+            if not _click_with_log(cm["cx"], cm["cy"], "close-menu"):
+                return False  # claim was sent, but the complete cycle failed
         else:
             _log(f"[FREEBIES] close button NOT found (score={cm['score']:.3f}) -> menu stays open")
     return True
@@ -206,11 +219,21 @@ def _sleep_interruptible(seconds: float):
         _wake_evt.clear()
 
 
+def _sync_statistics(active):
+    """Keep statistics failures from stopping game automation or its switch."""
+    try:
+        from features.gem_statistics import get_gem_statistics
+        get_gem_statistics().set_active(active)
+    except Exception as exc:
+        _log(f"[FREEBIES] statistics state update failed: {type(exc).__name__}: {exc}")
+
+
 def start():
     """Start the background worker (idempotent)."""
     global _thread, _thread_started
     if _thread_started:
         return
+    _sync_statistics(bool(getattr(state, "freebies_enabled", True)))
     _thread_started = True
     _stop_evt.clear()
     _thread = threading.Thread(target=_worker, daemon=True, name="freebies-worker")
@@ -222,6 +245,7 @@ def toggle() -> bool:
     On ON-transition the worker wakes immediately and runs a cycle — no
     waiting for the configured interval first."""
     new = not bool(getattr(state, "freebies_enabled", True))
+    _sync_statistics(new)
     state.freebies_enabled = new
     if new:
         # Wake the worker so it runs a cycle immediately instead of sleeping.

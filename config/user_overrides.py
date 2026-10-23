@@ -1,6 +1,86 @@
 # config/user_overrides.py
-import json
+import warnings
 from pathlib import Path
+
+from config.validation import validate_settings
+from config.json_store import read_json
+
+
+def migrate_founders_settings(overrides: dict) -> dict:
+    """Normalize legacy Founders settings without changing the input or disk.
+
+    Snapshot inherited Lootbug overrides once; explicit Founders values win.
+    After saving the normalized document, future Lootbug edits are independent.
+    """
+    result = dict(overrides)
+    legacy = result.pop("lootbug_founders", None)
+    if isinstance(legacy, dict):
+        founders = {}
+        lootbug = result.get("lootbug", {})
+        for suffix in (
+            "CHECK_INTERVAL_S", "BUSY_RETRY_S", "MATCH_THRESHOLD",
+            "SCREEN_REUSE_AGE_S", "TAP_JITTER_PX", "LOG_LEVEL_CLICK", "LOG_LEVEL_BUSY",
+        ):
+            key = "LOOTBUG_" + suffix
+            if key in lootbug:
+                founders["FOUNDERS_" + suffix] = lootbug[key]
+        for key, value in legacy.items():
+            if key.startswith("LOOTBUG_FOUNDERS_"):
+                founders[key.removeprefix("LOOTBUG_")] = value
+        founders.update(result.get("founders", {}))
+        result["founders"] = founders
+    if "founders" in result:
+        founders = dict(result["founders"])
+        if "FOUNDERS_ENABLED" in founders:
+            startup = dict(result.get("startup_defaults", {}))
+            startup.setdefault("FOUNDERS_ENABLED", founders.pop("FOUNDERS_ENABLED"))
+            result["startup_defaults"] = startup
+        for key in ("FOUNDERS_CLOSE_ROI", "FOUNDERS_CLOSE_TEMPLATE", "FOUNDERS_POST_CLICK_DELAY_S"):
+            founders.pop(key, None)
+        result["founders"] = founders
+    return result
+
+
+def validate_screenshot_settings(values: dict) -> dict:
+    """Validate against the shared schema and retain existing numeric coercion."""
+    validate_settings({"screenshot_capture": values})
+    result = dict(values)
+    if "SCREENSHOT_CAPTURE_ATTEMPTS" in result:
+        result["SCREENSHOT_CAPTURE_ATTEMPTS"] = int(result["SCREENSHOT_CAPTURE_ATTEMPTS"])
+    if "SCREENSHOT_RETRY_DELAY_S" in result:
+        result["SCREENSHOT_RETRY_DELAY_S"] = float(result["SCREENSHOT_RETRY_DELAY_S"])
+    return result
+
+
+def normalize_user_settings(overrides: dict) -> dict:
+    """Migrate Founders and remove obsolete Lootbug bonus selection settings."""
+    if not isinstance(overrides, dict):
+        raise ValueError("settings: expected object")
+    for section, values in overrides.items():
+        if not isinstance(values, dict):
+            raise ValueError(f"settings.{section}: expected object")
+    result = migrate_founders_settings(overrides)
+    if "screenshot_capture" in result:
+        result["screenshot_capture"] = validate_screenshot_settings(result["screenshot_capture"])
+    if "lootbug" in result:
+        lootbug = dict(result["lootbug"])
+        for key in (
+            "LOOTBUG_BUY_GEM_UPGRADES_ENABLED", "LOOTBUG_BONUS_DETECT_ROI",
+            "LOOTBUG_BONUS_DOUBLE_CLICK_DELAY_S", "LOOTBUG_BONUS_TEMPLATE_GLOB",
+            "LOOTBUG_BONUS_TEMPLATE", "LOOTBUG_CLOSE_ROI", "LOOTBUG_CLOSE_TEMPLATE",
+        ):
+            lootbug.pop(key, None)
+        for key, old, new in (
+            ("LOOTBUG_BONUS_BUY_ROI", (540, 846, 695, 914), (310, 370, 505, 672)),
+        ):
+            if isinstance(lootbug.get(key), (list, tuple)) and tuple(lootbug[key]) == old:
+                lootbug[key] = list(new)
+        result["lootbug"] = lootbug
+    if "startup_defaults" in result:
+        startup = dict(result["startup_defaults"])
+        startup.pop("lootbug_buy_bonus", None)
+        result["startup_defaults"] = startup
+    return validate_settings(result)
 
 
 def load_user_settings(base_dir: Path) -> dict:
@@ -8,13 +88,20 @@ def load_user_settings(base_dir: Path) -> dict:
     if not p.exists():
         return {}
     try:
-        return json.loads(p.read_text(encoding="utf-8"))
-    except Exception:
+        return normalize_user_settings(read_json(p))
+    except (OSError, ValueError, TypeError) as exc:
+        warnings.warn(f"Cannot load user settings; using defaults: {exc}", RuntimeWarning)
         return {}
 
 
 def apply_overrides_to_settings(settings_globals: dict, overrides: dict):
     """Apply user_settings.json overrides to settings globals."""
+    overrides = normalize_user_settings(overrides)
+    capture = overrides.get("screenshot_capture", {})
+    for key in ("SCREENSHOT_CAPTURE_ATTEMPTS", "SCREENSHOT_RETRY_DELAY_S",
+                "SCREENSHOT_LOG_LEVEL", "SCREENSHOT_LOG_CACHE_HITS"):
+        if key in capture:
+            settings_globals[key] = capture[key]
     adb = overrides.get("adb", {})
     if "DEVICE" in adb:
         settings_globals["DEVICE"] = adb["DEVICE"]
@@ -97,26 +184,24 @@ def apply_overrides_to_settings(settings_globals: dict, overrides: dict):
     lootbug = overrides.get("lootbug", {})
     _lootbug_keys = (
         "LOOTBUG_CHECK_INTERVAL_S",
+        "LOOTBUG_INTERVAL_VARIANCE_PCT",
         "LOOTBUG_BUSY_RETRY_S",
         "LOOTBUG_DETECT_ROI",
         "LOOTBUG_MATCH_THRESHOLD",
         "LOOTBUG_SCREEN_REUSE_AGE_S",
         "LOOTBUG_TAP_JITTER_PX",
         "LOOTBUG_POST_CLICK_DELAY_S",
-        "LOOTBUG_CLOSE_ROI",
         "LOOTBUG_LOG_LEVEL",
         "LOOTBUG_LOG_LEVEL_DETECT",
         "LOOTBUG_LOG_LEVEL_CLICK",
         "LOOTBUG_LOG_LEVEL_BUSY",
         "LOOTBUG_LOG_LEVEL_BONUS",
-        "LOOTBUG_BUY_GEM_UPGRADES_ENABLED",
-        "LOOTBUG_BONUS_DETECT_ROI",
+        "LOOTBUG_BONUS_BUY_TEMPLATE",
         "LOOTBUG_BONUS_BUY_ROI",
         "LOOTBUG_BONUS_TAP_JITTER_PX",
-        "LOOTBUG_BONUS_DOUBLE_CLICK_DELAY_S",
+        "LOOTBUG_BUY_RETRY_S",
     )
-    _lootbug_roi_keys = ("LOOTBUG_DETECT_ROI", "LOOTBUG_CLOSE_ROI",
-                         "LOOTBUG_BONUS_DETECT_ROI", "LOOTBUG_BONUS_BUY_ROI")
+    _lootbug_roi_keys = ("LOOTBUG_DETECT_ROI", "LOOTBUG_BONUS_BUY_ROI")
     for k in _lootbug_keys:
         if k in lootbug:
             v = lootbug[k]
@@ -127,19 +212,26 @@ def apply_overrides_to_settings(settings_globals: dict, overrides: dict):
                     continue
             settings_globals[k] = v
 
-    lootbug_founders = overrides.get("lootbug_founders", {})
-    if "LOOTBUG_FOUNDERS_ENABLED" in lootbug_founders:
-        settings_globals["LOOTBUG_FOUNDERS_ENABLED"] = bool(lootbug_founders["LOOTBUG_FOUNDERS_ENABLED"])
-    if "LOOTBUG_FOUNDERS_LOG_LEVEL" in lootbug_founders:
-        settings_globals["LOOTBUG_FOUNDERS_LOG_LEVEL"] = lootbug_founders["LOOTBUG_FOUNDERS_LOG_LEVEL"]
+    founders = overrides.get("founders", {})
+    for key in (
+        "FOUNDERS_CHECK_INTERVAL_S", "FOUNDERS_BUSY_RETRY_S",
+        "FOUNDERS_DETECT_ROI", "FOUNDERS_TEMPLATE", "FOUNDERS_MATCH_THRESHOLD",
+        "FOUNDERS_SCREEN_REUSE_AGE_S", "FOUNDERS_TAP_JITTER_PX",
+        "FOUNDERS_LOG_LEVEL", "FOUNDERS_LOG_LEVEL_CLICK", "FOUNDERS_LOG_LEVEL_BUSY",
+    ):
+        if key in founders:
+            value = founders[key]
+            if key == "FOUNDERS_DETECT_ROI" and isinstance(value, list):
+                value = tuple(int(x) for x in value)
+            settings_globals[key] = value
 
     sd = overrides.get("startup_defaults", {})
+    if "FOUNDERS_ENABLED" in sd:
+        settings_globals["FOUNDERS_ENABLED"] = bool(sd["FOUNDERS_ENABLED"])
     if "freebies_enabled" in sd:
         settings_globals["FREEBIES_ENABLED_DEFAULT"] = bool(sd["freebies_enabled"])
     if "lootbug_enabled" in sd:
         settings_globals["LOOTBUG_ENABLED_DEFAULT"] = bool(sd["lootbug_enabled"])
-    if "lootbug_buy_bonus" in sd:
-        settings_globals["LOOTBUG_BUY_GEM_UPGRADES_ENABLED"] = bool(sd["lootbug_buy_bonus"])
     if "workflows_enabled" in sd:
         settings_globals["WORKFLOWS_ENABLED_DEFAULT"] = bool(sd["workflows_enabled"])
     if "detect_level_enabled" in sd:
