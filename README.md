@@ -21,10 +21,7 @@
 
 # ⚠️ Project Status
 
-THIS PROJECT IS NOT RELEASED.  
-It is a showcase of my development work only – used only by me and some friends.
-
-Maybe it will be released in the future — maybe not.
+THIS PROJECT IS RELEASED recently. But there a some things I have to fix. i paused the game for a few months. Lootbug claims seems not to work.
 
 ---
 
