@@ -19,10 +19,6 @@
 
 <br>
 
-# ⚠️ Project Status
-
-THIS PROJECT IS RELEASED recently. But there a some things I have to fix. i paused the game for a few months. Lootbug claims seems not to work.
-
 ---
 
 ## Table of contents
