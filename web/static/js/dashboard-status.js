@@ -41,6 +41,7 @@ function updateScanCountdown(id, data, options={}) {
     host.innerHTML='<span class="scan-track" aria-hidden="true"><span class="scan-fill"></span></span><span class="scan-time"></span>';
   }
   const time=host.querySelector('.scan-time'), fill=host.querySelector('.scan-fill');
+  host.hidden=!data.enabled;
   const remaining=Math.max(0, Number(data.next_check_remaining)||0);
   const enabled=!!data.enabled && !options.blocked;
   const deadline=Number(data.next_check_ts)||0;

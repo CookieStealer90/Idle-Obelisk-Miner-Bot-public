@@ -180,6 +180,13 @@ def _buy_when_visible(thr: float) -> bool:
             _log(f"[LOOTBUG] Buy search exhausted after {limit} attempts -> "
                  "giving up this cycle and releasing action lock (no Close tap)",
                  "LOOTBUG_LOG_LEVEL_BONUS")
+            if (getattr(s, "LOOTBUG_TRIGGER_FOUNDERS_ON_BUY_FAILURE", False)
+                    and state.lootbug_enabled and not _stop_evt.is_set()):
+                from features import founders
+                _log("[LOOTBUG] Buy attempts exhausted -> triggering Founders recovery",
+                     "LOOTBUG_LOG_LEVEL_BONUS")
+                founders.recover_from_lootbug(
+                    cancelled=lambda: not state.lootbug_enabled or _stop_evt.is_set())
             return False
         if not waited_after_tap:
             delay = max(0.1, float(s.LOOTBUG_BUY_RETRY_S))

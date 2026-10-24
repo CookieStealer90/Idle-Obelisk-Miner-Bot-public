@@ -10,6 +10,7 @@ test('Founders priority, chain limit and bounded Buy retries render and save', (
   const container = {innerHTML:''};
   const inputs = [
     ['lootbug','LOOTBUG_BUY_MAX_ATTEMPTS','4'],
+    ['lootbug','LOOTBUG_TRIGGER_FOUNDERS_ON_BUY_FAILURE','true'],
     ['lootbug','LOOTBUG_FOUNDERS_LOOKAHEAD_S','0'],
     ['founders','FOUNDERS_MAX_CLAIMS_PER_CYCLE','2'],
   ].map(([section,key,value])=>({dataset:{section,key},value}));
@@ -21,7 +22,7 @@ test('Founders priority, chain limit and bounded Buy retries render and save', (
   });
   const source=readFileSync(join(__dirname,'../web/static/js/dashboard-settings.js'),'utf8');
   vm.runInContext(source.replace(/\nloadSettings\(\);\s*$/, ''),context);
-  vm.runInContext(`settingsData={lootbug:{LOOTBUG_BUY_MAX_ATTEMPTS:5,LOOTBUG_FOUNDERS_LOOKAHEAD_S:5},
+  vm.runInContext(`settingsData={lootbug:{LOOTBUG_BUY_MAX_ATTEMPTS:5,LOOTBUG_FOUNDERS_LOOKAHEAD_S:5,LOOTBUG_TRIGGER_FOUNDERS_ON_BUY_FAILURE:false},
     founders:{FOUNDERS_MAX_CLAIMS_PER_CYCLE:3}};renderSettings(settingsData);saveSettings();`,context);
   for (const field of inputs) {
     assert.ok(container.innerHTML.includes(`cfg-${field.dataset.section}-${field.dataset.key}`));
@@ -29,7 +30,11 @@ test('Founders priority, chain limit and bounded Buy retries render and save', (
   assert.match(container.innerHTML,/fresh recheck after every tap/);
   assert.match(container.innerHTML,/release the action lock/);
   assert.match(container.innerHTML,/0 still yields for due checks/);
-  assert.deepEqual(saved,{lootbug:{LOOTBUG_BUY_MAX_ATTEMPTS:4,LOOTBUG_FOUNDERS_LOOKAHEAD_S:0},
+  assert.match(container.innerHTML, /title="After LOOTBUG_BUY_MAX_ATTEMPTS unsuccessful Buy attempts[^\"]*"\>LOOTBUG_TRIGGER_FOUNDERS_ON_BUY_FAILURE/);
+  assert.match(container.innerHTML, /id="cfg-lootbug-LOOTBUG_TRIGGER_FOUNDERS_ON_BUY_FAILURE" title="After LOOTBUG_BUY_MAX_ATTEMPTS/);
+  assert.match(container.innerHTML, /If Founders automation is ON, advance its timer for an immediate check/);
+  assert.match(container.innerHTML, /If OFF, run one bounded manual Founders chain; automation stays OFF/);
+  assert.deepEqual(saved,{lootbug:{LOOTBUG_BUY_MAX_ATTEMPTS:4,LOOTBUG_FOUNDERS_LOOKAHEAD_S:0,LOOTBUG_TRIGGER_FOUNDERS_ON_BUY_FAILURE:true},
     founders:{FOUNDERS_MAX_CLAIMS_PER_CYCLE:2}});
 });
 

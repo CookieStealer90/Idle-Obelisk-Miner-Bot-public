@@ -145,6 +145,7 @@ LOOTBUG_BONUS_BUY_ROI = (310, 370, 505, 672)
 LOOTBUG_BONUS_TAP_JITTER_PX = 4
 LOOTBUG_BUY_RETRY_S = 3.0             # fresh screenshot retry while Buy is obscured
 LOOTBUG_BUY_MAX_ATTEMPTS = 5          # release the action lock after exhausted Buy attempts
+LOOTBUG_TRIGGER_FOUNDERS_ON_BUY_FAILURE = False  # advance Founders or run one manual chain
 LOOTBUG_FOUNDERS_LOOKAHEAD_S = 5.0    # yield to enabled Founders when due within this window
 
 # Per-event log levels — set to FULL while testing, lower later.

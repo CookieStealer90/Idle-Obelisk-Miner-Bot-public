@@ -26,7 +26,7 @@ test('countdown preserves DOM nodes while time and progress change',()=>{
   h.update({enabled:true,next_check_ts:500,next_check_remaining:0});
   assert.equal(time.textContent,'Ready');assert.equal(host.dataset.mode,'ready');
 });
-test('new deadlines and reactivation reset progress; disabled scans stay empty',()=>{
+test('new deadlines and reactivation reset progress; disabled scans hide the footer',()=>{
   const h=harness();
   h.update({enabled:true,next_check_ts:500,next_check_remaining:120});
   h.update({enabled:true,next_check_ts:500,next_check_remaining:60});
@@ -34,8 +34,10 @@ test('new deadlines and reactivation reset progress; disabled scans stay empty',
   const host=h.elements.get('timer'),fill=host.querySelector('.scan-fill');
   assert.equal(fill.style.transform,'scaleX(0.0000)');
   h.update({enabled:false,next_check_remaining:10});
+  assert.equal(host.hidden,true);
   assert.equal(host.querySelector('.scan-time').textContent,'Off');assert.equal(host.dataset.mode,'off');
   h.update({enabled:true,next_check_ts:600,next_check_remaining:5});
+  assert.equal(host.hidden,false);
   assert.equal(fill.style.transform,'scaleX(0.0000)');assert.equal(host.writes,1);
 });
 test('long countdowns stay compact and error details remain accessible as plain text',()=>{

@@ -46,6 +46,89 @@ class LootbugTests(unittest.TestCase):
         self.hit = {"found": True, "score": 0.99, "cx": 400, "cy": 500}
         self.miss = {"found": False, "score": 0.1}
 
+    def test_exhaustion_advances_enabled_founders_timer(self):
+        import features
+        self.settings.LOOTBUG_TRIGGER_FOUNDERS_ON_BUY_FAILURE = True
+        self.settings.LOOTBUG_BUY_MAX_ATTEMPTS = 2
+        self.feature.find_template.side_effect = [dict(self.hit)] + [dict(self.miss)] * 2
+        with patch.object(features, "founders", self.founders_feature, create=True):
+            self.assertEqual(self.feature._try_run_with_lock(), "founders_due")
+        self.assertEqual(self.state.founders_next_check_ts, 0)
+        self.assertTrue(self.founders_feature._wake_evt.is_set())
+        self.assertTrue(self.state.founders_enabled)
+        self.assertEqual(self.feature.tap.call_count, 1)
+        self.assertFalse(self.state.ingame_action_lock.locked())
+
+    def test_disabled_founders_manual_recovery_uses_fresh_screen_and_lock(self):
+        import features
+        self.settings.LOOTBUG_TRIGGER_FOUNDERS_ON_BUY_FAILURE = True
+        self.settings.LOOTBUG_BUY_MAX_ATTEMPTS = 1
+        self.state.founders_enabled = False
+        self.feature.find_template.side_effect = [
+            dict(self.hit), dict(self.miss), dict(self.hit), dict(self.miss)]
+        def tap(*args, **kwargs):
+            self.assertTrue(self.state.ingame_action_lock.locked())
+            return True
+        self.feature.tap.side_effect = tap
+        with patch.object(features, "founders", self.founders_feature, create=True):
+            self.assertEqual(self.feature._try_run_with_lock(), "ok")
+        self.assertFalse(self.state.founders_enabled)
+        self.assertFalse(self.state.founders_followup_pending)
+        self.assertEqual(self.state.founders_next_check_ts, 0)
+        self.assertEqual(self.state.founders_clicked_count, 1)
+        self.assertEqual(self.state.lootbug_bonus_count, 0)
+        self.assertEqual(self.feature.tap.call_count, 2)
+        self.assertEqual([c.args[0] for c in self.feature.get_screen.call_args_list],
+                         ["lootbug_scr", "founders_scr", "founders_scr"])
+        self.assertFalse(self.state.ingame_action_lock.locked())
+
+    def test_recovery_does_not_run_when_off_successful_or_cancelled(self):
+        import features
+        for case in ("off", "success", "cancelled"):
+            with self.subTest(case=case):
+                self.settings.LOOTBUG_TRIGGER_FOUNDERS_ON_BUY_FAILURE = case != "off"
+                self.settings.LOOTBUG_BUY_MAX_ATTEMPTS = 1
+                self.state.lootbug_enabled = True
+                self.feature.find_template.side_effect = (
+                    [dict(self.hit), dict(self.miss)] if case == "success" else [dict(self.miss)])
+                if case == "cancelled":
+                    def capture():
+                        self.state.lootbug_enabled = False
+                        return object()
+                else:
+                    capture = lambda: object()
+                with patch.object(features, "founders", self.founders_feature, create=True), \
+                     patch.object(self.founders_feature, "recover_from_lootbug") as recover, \
+                     patch.object(self.feature, "_fresh_own_screen", side_effect=capture):
+                    self.feature._buy_when_visible(.8)
+                recover.assert_not_called()
+
+    def test_manual_founders_recovery_is_bounded_and_does_not_queue_retries(self):
+        self.state.founders_enabled = False
+        self.settings.FOUNDERS_MAX_CLAIMS_PER_CYCLE = 2
+        self.feature.find_template.return_value = dict(self.hit)
+        with self.state.ingame_action_lock:
+            self.founders_feature.recover_from_lootbug()
+        self.assertEqual(self.feature.tap.call_count, 2)
+        self.assertEqual(self.state.founders_clicked_count, 2)
+        self.assertFalse(self.state.founders_followup_pending)
+        self.assertFalse(self.state.founders_enabled)
+        self.assertFalse(self.founders_feature._wake_evt.is_set())
+
+    def test_manual_founders_failure_and_cancellation_never_count(self):
+        for case in ("missing", "tap_failed", "cancelled"):
+            with self.subTest(case=case):
+                self.state.founders_enabled = False
+                self.feature.tap.reset_mock()
+                self.feature.tap.return_value = False
+                self.feature.find_template.return_value = dict(self.hit)
+                with patch.object(self.founders_feature, "_find_bundle",
+                                  return_value=None if case == "missing" else dict(self.hit)):
+                    self.founders_feature.recover_from_lootbug(cancelled=lambda: case == "cancelled")
+                self.assertEqual(self.state.founders_clicked_count, 0)
+                self.assertFalse(self.state.founders_followup_pending)
+                self.assertFalse(self.state.founders_enabled)
+
     def test_buy_box_is_detected_and_clicked_once_without_bonus_mode(self):
         self.feature.find_template.side_effect = [dict(self.hit), dict(self.hit), dict(self.miss)]
         self.assertTrue(self.feature._run_scan_cycle())

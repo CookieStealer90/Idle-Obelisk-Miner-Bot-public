@@ -72,11 +72,13 @@ def _find_bundle(force_fresh=False):
                          threshold=float(s.FOUNDERS_MATCH_THRESHOLD))
 
 
-def _run_scan_cycle(match=None) -> bool:
+def _run_scan_cycle(match=None, cancelled=lambda: False) -> bool:
     """Check for the founders lootbox and tap it if present. Returns True if clicked."""
     global _detected_generation
     generation = _activation_generation
     m = _find_bundle() if match is None else match
+    if cancelled():
+        return False
     if m is None:
         return False
     if not m["found"]:
@@ -107,20 +109,26 @@ def _run_scan_cycle(match=None) -> bool:
     return True
 
 
-def _run_claim_chain():
+def _run_claim_chain(manual=False, cancelled=lambda: False):
     """Caller owns the action lock; every sent tap gets a fresh follow-up scan."""
     state.founders_followup_pending = False
     generation = _activation_generation
     limit = int(getattr(s, "FOUNDERS_MAX_CLAIMS_PER_CYCLE", 3))
-    match = None
+    match = _find_bundle(force_fresh=True) if manual else None
+    if manual and match is None:
+        return
     for claimed in range(limit):
-        if not state.founders_enabled or _stop_evt.is_set() or generation != _activation_generation:
+        if ((not manual and not state.founders_enabled) or cancelled()
+                or _stop_evt.is_set() or generation != _activation_generation):
             return
-        if not _run_scan_cycle(match):
+        if not _run_scan_cycle(match, cancelled=lambda: (
+                cancelled() or _stop_evt.is_set() or generation != _activation_generation
+                or (not manual and not state.founders_enabled))):
             return
         _log(f"[FOUNDERS] tap sent ({claimed + 1}/{limit}) -> checking fresh screen for another bundle")
         match = _find_bundle(force_fresh=True)
-        if not state.founders_enabled or generation != _activation_generation or _stop_evt.is_set():
+        if ((not manual and not state.founders_enabled) or cancelled()
+                or generation != _activation_generation or _stop_evt.is_set()):
             return
         if match is None:
             state.founders_followup_pending = True
@@ -133,6 +141,25 @@ def _run_claim_chain():
     state.founders_followup_pending = True
     _log(f"[FOUNDERS] claim limit reached ({limit}); another bundle detected -> "
          "releasing action lock and scheduling short retry")
+
+
+def recover_from_lootbug(cancelled=lambda: False):
+    """Caller owns the action lock. Advance automation or run one bounded manual chain."""
+    if cancelled() or _stop_evt.is_set():
+        return
+    if state.founders_enabled:
+        state.founders_next_check_ts = 0.0
+        _wake_evt.set()
+        _log("[FOUNDERS] Lootbug recovery -> advancing enabled timer; checking now")
+        return
+    _log("[FOUNDERS] Lootbug recovery -> one manual claim chain (automation remains OFF)")
+    try:
+        _run_claim_chain(manual=True, cancelled=cancelled)
+    finally:
+        # A manual request must never leave automatic retries while disabled.
+        if not state.founders_enabled:
+            state.founders_followup_pending = False
+            state.founders_next_check_ts = 0.0
 
 
 def _try_run_with_lock() -> str:

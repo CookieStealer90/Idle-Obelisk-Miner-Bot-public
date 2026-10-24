@@ -88,7 +88,20 @@ lazy imports to avoid circular imports. Level detection writes
   When no Lootbug is detected, also check for an existing Buy box and resume
   its bounded search, including after a Founders interruption. Cached detections
   are only hints; purchase taps always require a fresh match. Exhaustion aborts this cycle and
-  releases the action lock; the next regular scan uses the normal interval.
+  releases the action lock; the next regular scan uses the normal interval unless
+  Founders has become due. Optional `LOOTBUG_TRIGGER_FOUNDERS_ON_BUY_FAILURE`
+  (default OFF, editable in the Lootbug settings; process restart required)
+  triggers Founders only after all Buy attempts are exhausted. When Founders
+  automation is enabled, reset its deadline and wake its worker for an immediate
+  check after Lootbug releases the lock. When disabled, run one bounded manual
+  Founders chain under the already held action lock, starting with a fresh
+  `founders_scr` capture. The manual chain uses the Founders template, ROI,
+  tap settings and `FOUNDERS_MAX_CLAIMS_PER_CYCLE`; it never enables automation
+  or leaves automatic follow-up retries while disabled. Lootbug disable/stop
+  cancels recovery at action boundaries. Successful Buy dismissal and early
+  cancellation do not trigger recovery. Existing settings files need no migration
+  and keep the previous behavior until the option is enabled. No local user
+  settings are changed automatically.
   Disabling/stopping or an enabled Founders check becoming due aborts early.
   The action lock stays held only during this bounded search. There is
   no automatic closing; obsolete close settings are removed.
@@ -185,10 +198,12 @@ the available flow, not its current reliability in the game.
 
 The Freebie, Lootbug, Founders, Level and Notices status tiles use a fixed,
 single-line footer: a slim progress track and compact `m:ss` / `h:mm:ss`
-countdown. Disabled scans show an empty track and `Off`; due scans show `Ready`.
+countdown. Disabled scans hide the entire progress/countdown footer; due scans show `Ready`.
+The Notices tile shows red `OFF` while disabled and the saved notice count while
+enabled. The inbox count and saved notices remain available while disabled.
 Level setup issues use `Setup`. Last-detection/scan ages and errors remain in
 the footer tooltip and accessible label instead of extending the tile height.
-All countdown text stays dim grey, including Ready and Off; status colors apply
+All visible countdown text stays dim grey, including Ready; status colors apply
 to the bar. Countdown initialization replaces the entire footer even when a
 cached older template still nests the timer beside legacy last-scan text.
 Tiles use content-driven height without an imposed minimum height; the compact

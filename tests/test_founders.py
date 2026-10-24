@@ -411,6 +411,7 @@ class ConfigApiTests(unittest.TestCase):
                 data = response.get_json()
                 for section, key, default, chosen in (
                     ("lootbug", "LOOTBUG_BUY_MAX_ATTEMPTS", 5, 4),
+                    ("lootbug", "LOOTBUG_TRIGGER_FOUNDERS_ON_BUY_FAILURE", False, True),
                     ("lootbug", "LOOTBUG_FOUNDERS_LOOKAHEAD_S", 5, 7),
                     ("founders", "FOUNDERS_MAX_CLAIMS_PER_CYCLE", 3, 2),
                 ):
@@ -421,10 +422,16 @@ class ConfigApiTests(unittest.TestCase):
                 target = {}
                 apply_overrides_to_settings(target, data)
                 self.assertEqual(target["LOOTBUG_BUY_MAX_ATTEMPTS"], 4)
+                self.assertTrue(target["LOOTBUG_TRIGGER_FOUNDERS_ON_BUY_FAILURE"])
                 self.assertEqual(target["LOOTBUG_FOUNDERS_LOOKAHEAD_S"], 7)
                 self.assertEqual(target["FOUNDERS_MAX_CLAIMS_PER_CYCLE"], 2)
                 path = root / "config/user_settings.json"
                 saved = path.read_bytes()
+                for invalid in (0, 1, "true", None):
+                    bad = copy.deepcopy(data)
+                    bad["lootbug"]["LOOTBUG_TRIGGER_FOUNDERS_ON_BUY_FAILURE"] = invalid
+                    self.assertEqual(client.post("/api/config/settings", json=bad).status_code, 400)
+                    self.assertEqual(path.read_bytes(), saved)
                 for section, key in (("lootbug", "LOOTBUG_BUY_MAX_ATTEMPTS"),
                                      ("founders", "FOUNDERS_MAX_CLAIMS_PER_CYCLE")):
                     for invalid in (0, -1, 1.5, True, "3", 101):

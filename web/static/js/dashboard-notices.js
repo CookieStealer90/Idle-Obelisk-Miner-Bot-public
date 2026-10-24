@@ -5,6 +5,13 @@
   const nodes=new Map();
   const acknowledged=new Set();
   let entries=[], limit=30, loading=false, workerError='';
+  let enabled=null;
+
+  function renderStatusValue(){
+    const value=document.getElementById('s-notices-val');
+    value.className='stat-value'+(enabled===false?' red':enabled?' green':'');
+    value.textContent=enabled===false?'OFF':entries.length;
+  }
 
   function report(message){error.textContent=message||'';error.hidden=!message;}
   async function request(url,options){
@@ -56,7 +63,7 @@
       if(!nodes.has(entry.id)){const node=createEntry(entry);nodes.set(entry.id,node);list.append(node);}
     }
     document.getElementById('notices-count').textContent=entries.length;
-    document.getElementById('s-notices-val').textContent=entries.length;
+    renderStatusValue();
     document.getElementById('notices-empty').hidden=entries.length>0;
     document.getElementById('notices-more').hidden=entries.length<=limit;
   }
@@ -68,8 +75,8 @@
   socket.on('bot_state',data=>{
     const n=data.notices||{};
     setBtn('btn-notices',n.enabled,'\uD83D\uDCE5 Notices');
-    const value=document.getElementById('s-notices-val');
-    value.className='stat-value'+(n.enabled?' green':'');
+    enabled=!!n.enabled;
+    renderStatusValue();
     const last=typeof n.last_scan_age==='number'?'Last scan: '+fmtSec(n.last_scan_age)+' ago':'Never scanned';
     updateScanCountdown('s-notices-next',n,{detail:[last,n.error||n.status].filter(Boolean).join(' \u00b7 ')});
     document.getElementById('notices-status').textContent=n.enabled

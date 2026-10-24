@@ -93,6 +93,7 @@ const FIELD_HINTS={
   'LOOTBUG_SCREEN_REUSE_AGE_S':'reuse game_scr.png if younger than this (sec)',
   'LOOTBUG_TAP_JITTER_PX':'random +/- pixel jitter on taps',
   'LOOTBUG_BUY_MAX_ATTEMPTS':'maximum Buy screenshot/tap attempts per cycle (1-100); then release the action lock without clicking Close',
+  'LOOTBUG_TRIGGER_FOUNDERS_ON_BUY_FAILURE':'After LOOTBUG_BUY_MAX_ATTEMPTS unsuccessful Buy attempts, try to clear a Founders bundle that may be blocking the Lootbug. If Founders automation is ON, advance its timer for an immediate check. If OFF, run one bounded manual Founders chain; automation stays OFF. Default: OFF. Save and restart the bot to apply.',
   'LOOTBUG_FOUNDERS_LOOKAHEAD_S':'yield without the action lock when an enabled Founders check is due within this many seconds; 0 still yields for due checks',
   'LOOTBUG_BUY_RETRY_S':'seconds between Buy retries and before fresh post-tap verification; never closes the popup',
   'LOOTBUG_POST_CLICK_DELAY_S':'wait before the first Buy scan after a Lootbug tap or when resuming an open dialog (default 2 seconds)',
@@ -185,7 +186,8 @@ function renderSettings(data){
       const unit=FIELD_UNITS[key]||'';
 
       if(typeof val==='boolean'){
-        h+=`<div class="cfg-row"><span class="cfg-key" title="${key}">${key}</span><input class="cfg-val bool" id="${id}" type="text" value="${esc(val)}" readonly onclick="toggleBool(this)" data-section="${section}" data-key="${key}"><span class="cfg-unit"></span></div>`;
+        const tooltip=esc(FIELD_HINTS[key]||key);
+        h+=`<div class="cfg-row"><span class="cfg-key" title="${tooltip}">${key}</span><input class="cfg-val bool" id="${id}" title="${tooltip}" type="text" value="${esc(val)}" readonly onclick="toggleBool(this)" data-section="${section}" data-key="${key}"><span class="cfg-unit"></span></div>`;
       }else if(Array.isArray(val)){
         h+=`<div class="cfg-row"><span class="cfg-key" title="${key}">${key}</span><input class="cfg-val" id="${id}" type="text" value="${esc(val.join(', '))}" data-section="${section}" data-key="${key}" data-ftype="array"><span class="cfg-unit"></span></div>`;
       }else{

@@ -94,9 +94,16 @@ test('compact notice status keeps last-scan details in countdown tooltip data',a
   assert.equal(h.countdowns.at(-1)[1].next_check_remaining,2700);
   assert.match(h.countdowns.at(-1)[2].detail,/Last scan: 42s ago/);
   h.handlers.bot_state({notices:{enabled:false,last_scan_age:50}});
+  assert.equal(h.elements.get('s-notices-val').textContent,'OFF');
+  assert.equal(h.elements.get('s-notices-val').className,'stat-value red');
+  h.handlers.poll();await flush();
+  assert.equal(h.elements.get('s-notices-val').textContent,'OFF');
+  assert.equal(h.elements.get('notices-count').textContent,1);
   assert.equal(h.countdowns.at(-1)[1].enabled,false);
   assert.match(h.countdowns.at(-1)[2].detail,/50s ago/);
   h.handlers.bot_state({notices:{enabled:true,last_scan_age:null,error:'Capture failed'}});
+  assert.equal(h.elements.get('s-notices-val').textContent,1);
+  assert.equal(h.elements.get('s-notices-val').className,'stat-value green');
   assert.match(h.countdowns.at(-1)[2].detail,/Never scanned.*Capture failed/);
 });
 
