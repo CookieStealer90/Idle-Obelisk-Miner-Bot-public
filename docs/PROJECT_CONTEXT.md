@@ -304,10 +304,9 @@ These observations are not failure reports reproduced in the running bot:
 | The worker applies workflow reloads between complete executions; metadata uses a shared lock. | Parent/subworkflows retain one definition generation; the dashboard and logs show requests, completion or errors. |
 | The dashboard remains reachable on the LAN and checks origin scheme, host and port, including Socket.IO. There is no authentication. | LAN devices remain trusted. Foreign private origins and `null` are blocked; local JSON scripts without Origin remain supported. `OBELISKBOT_ALLOW_PUBLIC` can disable the IP restriction. |
 | Statistics retain hourly buckets for seven days and permanent all-time gem/active-uptime sums. | Legacy files preserve gems but cannot reconstruct historical active uptime; the dashboard marks all-time uptime unavailable until an explicit reset. Rolling windows intentionally retain hourly precision. |
-| The UI offers startup options for statistics/screenshot visibility; `user_overrides.py` does not apply those two options. | Saved UI values are not consistently connected to runtime state. |
+| Statistics tracking/card and screenshot visibility startup options are applied by the override loader and bot startup. | General settings still require restart; level startup enablement has one canonical field with legacy migration. |
 
-Other details: the README is incomplete and gives conflicting orientation
-instructions. Many current ROIs target **900 x 1600**; automatic adaptation to
+Other details: many current ROIs target **900 x 1600**; automatic adaptation to
 arbitrary resolutions is not implemented. The WebUI explicitly distinguishes settings
 restart from safe workflow reload. Dependencies are mostly unpinned. Frequent
 exception suppression makes troubleshooting harder.
@@ -403,3 +402,47 @@ tests and manual acceptance. New regression tests:
 `tests/test_workflow_safety.py`, `tests/test_dashboard_security.py` and
 `tests/test_dashboard_editors.cjs`. Local settings and workflows were also
 checked against the new validator without overwriting their files.
+
+
+## Maintenance fixes and intentionally retained behavior (2026-10-24)
+
+- Multiple processes are supported for multiple emulators. Use separate project
+  directories, distinct WebUI ports and fixed DEVICE values with
+  ADB_AUTO_CONNECT=false to prevent fallback switching. See the README FAQ.
+  Command dispatch, ADB selection/reconnection, hard process termination,
+  workflow swipe repetitions and the screenshot capture pipeline are retained.
+- Workflow action waits ignore scheduler wake events; master cancellation and
+  stop remain interruptible. If-condition fail_wf aborts on a missing match,
+  unavailable template or screenshot. Default inverted-condition semantics remain.
+- Freebies cancels old activation generations before further actions. It does
+  not perform cleanup taps after cancellation. A successful in-flight claim
+  remains counted even if statistics was paused during ADB completion.
+- Settings migration consolidates level activation into startup_defaults.
+  Legacy detailed enablement preserves its old effective precedence once;
+  normalized saves contain only the canonical startup switch. Statistics/card
+  and screenshot visibility startup settings now affect runtime state.
+- core/image_io.py decodes file bytes for Unicode-safe template loading across
+  vision, rotation, notices, level detection and rainbow calibration. Templates
+  still use their original resolution and matching algorithms.
+- Dashboard text escapes HTML attribute quotes; dynamic inline-handler
+  arguments also use JSON string encoding before HTML encoding.
+- Notice listings cache PNG metadata by file signature, stat on each refresh
+  and invalidate additions, replacements and deletions. Polling stays at 5s.
+- Statistics use UTC hour keys and monotonic duration accounting. Legacy keys
+  migrate once in the installation's current timezone without resetting totals.
+  Already merged DST buckets are unrecoverable. Only changed data is persisted;
+  failed saves retain the dirty state for retry. See STATISTICS.md.
+- Tray output really does log: its own messages and stdout/stderr now share
+  core.file_logger's file lock, path and rotation. One active bot.log remains,
+  together with the existing rotation copies. No separate tray log is created.
+- Installation creates a project-local .venv and uses requirements.txt. Both
+  launchers prefer it, and no packages are installed merely by launching.
+  Legacy global installations remain usable. Installation was not run as a test.
+- Removed unreferenced ADB/device-byte helpers, WebUI emit wrappers, old select
+  helpers, unused imports/state duplication and retired Wave-Pilot CSS rules.
+  Retained screenshot_gray, clear_cache, legacy state response fields, registered
+  routes/executors and the documented editor placeholder for compatibility.
+- Added regression coverage for timing/cancellation, settings migration, quote
+  roundtrips, notice cache invalidation, UTC migration, idle writes, Unicode
+  templates, concurrent file rotation and mocked interpreter installation/launch.
+  No bot or emulator acceptance run was performed for these changes.

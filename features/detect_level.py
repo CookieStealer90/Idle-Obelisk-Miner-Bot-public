@@ -27,6 +27,7 @@ import threading
 import time
 
 import cv2
+from core.image_io import read_image
 
 import config.app_state as state
 import config.settings as s
@@ -66,7 +67,7 @@ def _load_digit_templates():
         if not m:
             continue
         digit = int(m.group(1))
-        img = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
+        img = read_image(path, cv2.IMREAD_GRAYSCALE)
         if img is None:
             continue
         h, w = img.shape[:2]

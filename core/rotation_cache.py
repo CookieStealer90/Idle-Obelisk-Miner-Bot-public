@@ -20,6 +20,7 @@ import threading
 
 import cv2
 import numpy as np
+from core.image_io import read_image
 
 from config.settings import BASE_DIR
 
@@ -111,7 +112,7 @@ def get_rotated_templates(rel_path: str, n: int, downscale: int = 1):
         cached = _cache.get(key)
         if cached is not None:
             return cached
-    tpl = cv2.imread(full, cv2.IMREAD_GRAYSCALE)
+    tpl = read_image(full, cv2.IMREAD_GRAYSCALE)
     if tpl is None:
         return None, None
     if downscale > 1:

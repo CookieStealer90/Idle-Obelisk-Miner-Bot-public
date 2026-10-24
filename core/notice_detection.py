@@ -3,6 +3,7 @@ from pathlib import Path
 
 import cv2
 import numpy as np
+from core.image_io import read_image
 
 
 def detect_notice(image, roi, template_dir, pattern, threshold):
@@ -19,8 +20,8 @@ def detect_notice(image, roi, template_dir, pattern, threshold):
         raise ValueError("No notice frame templates found")
     usable = 0
     for path in paths:
-        frame = cv2.imread(str(path), cv2.IMREAD_COLOR)
-        mask = cv2.imread(str(path.with_name(path.stem + "_mask.png")), cv2.IMREAD_GRAYSCALE)
+        frame = read_image(path, cv2.IMREAD_COLOR)
+        mask = read_image(path.with_name(path.stem + "_mask.png"), cv2.IMREAD_GRAYSCALE)
         if frame is None or mask is None or mask.shape != frame.shape[:2] or not mask.any():
             raise ValueError(f"Invalid notice frame/mask: {path.name}")
         h, w = mask.shape

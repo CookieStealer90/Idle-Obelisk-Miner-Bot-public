@@ -68,15 +68,15 @@ function renderIfStep(step, path, slug){
   /* Header */
   h += `<div class="wfe-step-hdr">`;
   h += `<span class="wfe-step-drag" title="Drag to reorder">\u2630</span>`;
-  h += `<button class="wfe-if-collapse-btn" onclick="toggleIfCollapse('${esc(slug)}','${esc(path)}',this,event)" title="${collapsed?'Expand':'Collapse'} block">${collapsed?'\u25B8':'\u25BE'}</button>`;
+  h += `<button class="wfe-if-collapse-btn" onclick="toggleIfCollapse(${jsArg(slug)},${jsArg(path)},this,event)" title="${collapsed?'Expand':'Collapse'} block">${collapsed?'\u25B8':'\u25BE'}</button>`;
   h += `<span class="wfe-step-num">${_pathDisplayNum(path)}</span>`;
   h += `<span class="wfe-step-type wfe-if-label">\u2756 If / ElseIf / Else</span>`;
   h += `<div class="wfe-step-controls">`;
-  h += `<button class="wfe-step-btn toggle-dis" onclick="toggleStepDisabled('${esc(slug)}','${esc(path)}')" title="${isDis?'Enable':'Disable'} block">${isDis?'\u25C9':'\u25CE'}</button>`;
-  h += `<button class="wfe-step-btn move" onclick="moveStep('${esc(slug)}','${esc(path)}',-1)" title="Move up">\u25B2</button>`;
-  h += `<button class="wfe-step-btn move" onclick="moveStep('${esc(slug)}','${esc(path)}',1)" title="Move down">\u25BC</button>`;
-  h += `<button class="wfe-step-btn copy" onclick="copyStep('${esc(slug)}','${esc(path)}')" title="Duplicate block">\u29C9</button>`;
-  h += `<button class="wfe-step-btn del" onclick="delStep('${esc(slug)}','${esc(path)}')" title="Delete">\u2715</button>`;
+  h += `<button class="wfe-step-btn toggle-dis" onclick="toggleStepDisabled(${jsArg(slug)},${jsArg(path)})" title="${isDis?'Enable':'Disable'} block">${isDis?'\u25C9':'\u25CE'}</button>`;
+  h += `<button class="wfe-step-btn move" onclick="moveStep(${jsArg(slug)},${jsArg(path)},-1)" title="Move up">\u25B2</button>`;
+  h += `<button class="wfe-step-btn move" onclick="moveStep(${jsArg(slug)},${jsArg(path)},1)" title="Move down">\u25BC</button>`;
+  h += `<button class="wfe-step-btn copy" onclick="copyStep(${jsArg(slug)},${jsArg(path)})" title="Duplicate block">\u29C9</button>`;
+  h += `<button class="wfe-step-btn del" onclick="delStep(${jsArg(slug)},${jsArg(path)})" title="Delete">\u2715</button>`;
   h += `</div></div>`;
 
   /* Note field (always visible, also when collapsed) */
@@ -92,9 +92,9 @@ function renderIfStep(step, path, slug){
   h += `<option value="false" ${onMissing==='false'?'selected':''}>condition = false (continue)</option>`;
   h += `<option value="fail_wf" ${onMissing==='fail_wf'?'selected':''}>fail workflow (abort)</option>`;
   h += `</select>`;
-  h += `<button class="btn wfe-mini" onclick="addElseIf('${esc(slug)}','${esc(path)}')" title="Add an ElseIf branch">+ ElseIf</button>`;
+  h += `<button class="btn wfe-mini" onclick="addElseIf(${jsArg(slug)},${jsArg(path)})" title="Add an ElseIf branch">+ ElseIf</button>`;
   if(elseSteps===null){
-    h += `<button class="btn wfe-mini" onclick="addElseBranch('${esc(slug)}','${esc(path)}')" title="Add Else branch">+ Else</button>`;
+    h += `<button class="btn wfe-mini" onclick="addElseBranch(${jsArg(slug)},${jsArg(path)})" title="Add Else branch">+ Else</button>`;
   }
   h += `</div>`;
 
@@ -108,7 +108,7 @@ function renderIfStep(step, path, slug){
     h += `<div class="wfe-if-branch">`;
     h += `<div class="wfe-if-branch-hdr"><span class="wfe-if-branch-label">${label}</span>`;
     if(bi > 0){
-      h += `<button class="wfe-step-btn del" style="margin-left:auto" onclick="delBranch('${esc(slug)}','${esc(path)}',${bi})" title="Remove this ElseIf">\u2715</button>`;
+      h += `<button class="wfe-step-btn del" style="margin-left:auto" onclick="delBranch(${jsArg(slug)},${jsArg(path)},${bi})" title="Remove this ElseIf">\u2715</button>`;
     } else {
       h += `<div style="flex:1"></div>`;
     }
@@ -128,7 +128,7 @@ function renderIfStep(step, path, slug){
     const elsePath = `${path}.else_steps`;
     h += `<div class="wfe-if-branch wfe-if-else">`;
     h += `<div class="wfe-if-branch-hdr"><span class="wfe-if-branch-label">ELSE</span>`;
-    h += `<button class="wfe-step-btn del" style="margin-left:auto" onclick="delElseBranch('${esc(slug)}','${esc(path)}')" title="Remove Else">\u2715</button>`;
+    h += `<button class="wfe-step-btn del" style="margin-left:auto" onclick="delElseBranch(${jsArg(slug)},${jsArg(path)})" title="Remove Else">\u2715</button>`;
     h += `</div>`;
     h += `<div class="wfe-branch-steps wfe-steps-list" data-container-path="${esc(elsePath)}" data-slug="${esc(slug)}" ondragover="onContainerDragOver(event)" ondrop="onContainerDrop(event)" ondragleave="onContainerDragLeave(event)">`;
     (elseSteps||[]).forEach((s, si)=>{

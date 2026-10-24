@@ -7,6 +7,7 @@ All images are handled in grayscale.
 """
 import os
 import cv2
+from core.image_io import read_image
 
 from config.settings import BASE_DIR
 
@@ -16,7 +17,7 @@ IMG_DIR = os.path.join(str(BASE_DIR), "images")
 def _load_template_gray(rel_path: str):
     """Load a template from images/<rel_path> as grayscale. Returns None on failure."""
     full = rel_path if os.path.isabs(rel_path) else os.path.join(IMG_DIR, rel_path)
-    return cv2.imread(full, cv2.IMREAD_GRAYSCALE)
+    return read_image(full, cv2.IMREAD_GRAYSCALE)
 
 
 def _crop_roi(img, roi):

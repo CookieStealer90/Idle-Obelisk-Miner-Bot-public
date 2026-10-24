@@ -16,9 +16,24 @@ missing image matches, but does not permit an ADB click failure.
 Freebie-Gems remain estimates calculated from submitted claim clicks and
 `FREEBIES_DIAMONDS_PER_CLAIM`. The dashboard and logs explicitly label them as
 such. A successful claim click remains counted if the subsequent close click
-fails; the overall cycle then reports failure. Founders still performs exactly
-one click without a popup or delay. The existing Lootbug Buy retry flow remains
-unchanged.
+fails; the overall cycle then reports failure. Founders clicks each detected
+bundle once and checks a fresh frame for further bundles within its chain cap.
+The Lootbug Buy retry flow remains unchanged.
+
+Freebies checks its activation generation before further game actions, so OFF
+or OFF/ON during a capture, match or wait cancels the old cycle. An in-flight
+ADB call completes and a successful claim stays counted, including in statistics
+if it was sent before pause. Cancellation sends no automatic cleanup taps; an
+already opened menu can remain open for manual handling. Existing blocking
+action-lock acquisition and the central command dispatch behavior are retained.
+
+Scheduler wake events no longer shorten workflow waits or repeat intervals.
+Only master cancellation or stop can shorten these action waits. Reload still
+applies at execution boundaries. For If template conditions, `fail_wf` aborts
+on a nonmatch (including an unavailable template) or unavailable screenshot;
+the default policy retains ordinary visible/not-visible branching. Repeated
+workflow swipes intentionally continue after a failed swipe and report the
+combined failure afterward.
 
 Actual reward verification requires a reliable, agreed visual indicator in the
 game. No additional image search or balance measurement has been introduced.

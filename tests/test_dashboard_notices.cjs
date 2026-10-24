@@ -110,7 +110,7 @@ test('Notices settings render and save numbers, ROI, paths and startup independe
     {dataset:{section:'startup_defaults',key:'NOTICES_ENABLED'},value:'true'},
   ];
   let saved;
-  const context=vm.createContext({document:{getElementById:()=>container,querySelectorAll:()=>inputs},
+  const context=vm.createContext({esc:String,document:{getElementById:()=>container,querySelectorAll:()=>inputs},
     fetch:(url,options)=>{saved=JSON.parse(options.body);return Promise.resolve({json:()=>({ok:true})});},showToast(){}});
   vm.runInContext(readFileSync(join(__dirname,'../web/static/js/dashboard-settings.js'),'utf8').replace(/\nloadSettings\(\);\s*$/,''),context);
   vm.runInContext(`settingsData={notices:{NOTICES_CHECK_INTERVAL_S:2700,NOTICES_INTERVAL_VARIANCE_PCT:15,

@@ -69,20 +69,6 @@ def push_log(msg: str):
         pass
 
 
-def emit_state(data: dict):
-    try:
-        socketio.emit("bot_state", data)
-    except Exception:
-        pass
-
-
-def emit_live(event: str, data):
-    try:
-        socketio.emit(event, data)
-    except Exception:
-        pass
-
-
 def push_toast(msg: str, error: bool = False):
     """Push a toast notification to all connected dashboards."""
     try:
@@ -125,6 +111,7 @@ def api_logs():
 @app.route("/api/restart", methods=["POST"])
 def api_restart():
     push_log("[WEB] Restart requested - relaunching process.")
+    port = str(request.environ.get("SERVER_PORT", 6001))
 
     def _do_restart():
         time.sleep(0.5)
@@ -135,7 +122,7 @@ def api_restart():
         if not os.path.exists(entry):
             entry = os.path.join(str(BASE_DIR), "main.py")
         subprocess.Popen(
-            [sys.executable, entry],
+            [sys.executable, entry, port],
             cwd=str(BASE_DIR),
             creationflags=_CREATE,
         )

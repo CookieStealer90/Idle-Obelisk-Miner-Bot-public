@@ -16,6 +16,60 @@ import test_screenshot_consumers as consumers
 
 
 class StatisticsTests(unittest.TestCase):
+    def test_paused_ticker_does_not_write_unchanged_statistics(self):
+        self.gs.set_active(True)
+        self.now += 10
+        self.gs.set_active(False)
+        ticks = 0
+        def sleep(seconds):
+            nonlocal ticks
+            ticks += 1
+            if ticks > 3:
+                raise StopIteration
+            self.now += seconds
+        self.module.time.sleep = sleep
+        with patch.object(self.gs, "_save") as save, self.assertRaises(StopIteration):
+            self.gs._uptime_ticker()
+        save.assert_not_called()
+
+    def test_inflight_claim_is_counted_after_pause_but_manual_claims_stay_blocked(self):
+        self.gs.set_active(True)
+        self.gs.set_active(False)
+        self.assertEqual(self.gs.record_claim(amount=28, in_flight=True), 28)
+        self.assertIsNone(self.gs.record_claim(amount=28))
+        self.assertFalse(self.gs.get_stats()["active"])
+        self.assertEqual(self.gs.get_stats()["gem_alltime"], 28)
+
+    def test_utc_buckets_distinguish_repeated_local_hour_and_migrate_once(self):
+        timestamps = [datetime.datetime.fromisoformat(value).timestamp() for value in
+                      ("2026-10-25T02:30:00+02:00", "2026-10-25T02:30:00+01:00")]
+        self.assertEqual([self.gs._bucket_key(ts) for ts in timestamps],
+                         ["2026-10-25-00", "2026-10-25-01"])
+        legacy = {"hourly_buckets": {"2026-10-01-12": {"gems": 28, "uptime_s": 60}},
+                  "stats_start_ts": self.now, "alltime_gems": 28, "alltime_uptime_s": 60,
+                  "alltime_uptime_complete": True}
+        self.path.write_text(json.dumps(legacy))
+        migrated = self.module.GemStatistics()
+        key = migrated._bucket_key(datetime.datetime(2026, 10, 1, 12).timestamp())
+        self.assertEqual(migrated._data["hourly_buckets"], {key: {"gems": 28, "uptime_s": 60}})
+        migrated.set_active(False)
+        original = self.path.read_bytes()
+        restarted = self.module.GemStatistics()
+        restarted.set_active(False)
+        self.assertEqual(self.path.read_bytes(), original)
+        self.assertEqual(restarted.get_stats()["gem_alltime"], 28)
+
+    def test_system_clock_correction_does_not_inflate_active_uptime(self):
+        self.gs.set_active(True)
+        monotonic = self.now
+        self.module.time.monotonic = lambda: monotonic
+        self.now += 86400
+        monotonic += 10
+        self.assertEqual(self.gs.get_stats()["uptime_alltime_s"], 10)
+        self.now -= 2 * 86400
+        monotonic += 5
+        self.assertEqual(self.gs.get_stats()["uptime_alltime_s"], 15)
+
     def setUp(self):
         self.module = load_module("gem_statistics_under_test", "features/gem_statistics.py")
         directory = tempfile.TemporaryDirectory(dir=Path(__file__).resolve().parent.parent)
@@ -23,7 +77,7 @@ class StatisticsTests(unittest.TestCase):
         self.path = Path(directory.name) / "stats.json"
         self.now = datetime.datetime(2026, 10, 1, 12).timestamp()
         self.module._STATS_FILE = self.path
-        self.module.time = types.SimpleNamespace(time=lambda: self.now, sleep=Mock())
+        self.module.time = types.SimpleNamespace(time=lambda: self.now, monotonic=lambda: self.now, sleep=Mock())
         self.module.threading = types.SimpleNamespace(Lock=threading.Lock, Thread=Mock())
         self.gs = self.module.GemStatistics()
 

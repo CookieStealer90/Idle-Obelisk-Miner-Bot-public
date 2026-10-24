@@ -16,11 +16,15 @@ Metrics:
 """
 import os
 import glob
+import sys
 import cv2
 import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
+if ROOT not in sys.path:
+    sys.path.insert(0, ROOT)
+from core.image_io import read_image
 
 ROI = (115, 269, 813, 1041)
 SAT_MIN = 180
@@ -36,7 +40,7 @@ BLOCK_BUCKETS = 6               # coarser: 6 buckets over 0..180 (30 deg each)
 
 
 def analyze(path: str):
-    img = cv2.imread(path, cv2.IMREAD_COLOR)
+    img = read_image(path, cv2.IMREAD_COLOR)
     if img is None:
         return None
     x1, y1, x2, y2 = ROI
@@ -104,7 +108,7 @@ def label_for(name: str) -> str:
 
 
 def main():
-    in_wf = sorted(glob.glob(os.path.join(ROOT, "images", "Workflows", "*.png")))
+    in_wf = sorted(glob.glob(os.path.join(ROOT, "images", "workflows", "*.png")))
     in_temp = sorted(glob.glob(os.path.join(ROOT, "temp", "*.png")))
 
     rows = []

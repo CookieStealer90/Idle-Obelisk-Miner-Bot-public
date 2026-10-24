@@ -2,6 +2,7 @@
 from concurrent.futures import ThreadPoolExecutor
 import copy
 import threading
+import time
 import types
 import unittest
 from unittest.mock import Mock
@@ -21,6 +22,30 @@ class WorkflowSafetyTests(unittest.TestCase):
         self.w.tap.return_value = True
         self.w.scroll.return_value = True
         self.w._push_toast = Mock()
+
+    def test_scheduler_wake_does_not_shorten_action_wait_or_consume_wake(self):
+        self.w.cfg_wf.WORKFLOWS = {"other": {"steps": []}}
+        self.w.toggle_wf("other")
+        started = time.monotonic()
+        self.w._interruptible_sleep(0.06)
+        self.assertGreaterEqual(time.monotonic() - started, 0.05)
+        self.assertTrue(self.w._wake_evt.is_set())
+        self.w._cancel_evt.set()
+        started = time.monotonic()
+        self.w._interruptible_sleep(2)
+        self.assertLess(time.monotonic() - started, 0.2)
+
+    def test_missing_template_policy_applies_to_both_condition_kinds(self):
+        self.w.get_screen.return_value = (object(), 900, 1600)
+        for kind in ("template_visible", "template_not_visible"):
+            condition = {"kind": kind, "template": "missing"}
+            self.w.find_template.return_value = {"found": False, "score": 0}
+            self.assertEqual(self.w._eval_condition(condition, {}, False, "fail_wf"), (False, True))
+            self.assertEqual(self.w._eval_condition(condition, {}, False, "false"),
+                             (kind == "template_not_visible", False))
+            self.w.find_template.return_value = {"found": True, "score": 1}
+            self.assertEqual(self.w._eval_condition(condition, {}, False, "fail_wf"),
+                             (kind == "template_visible", False))
 
     def test_all_tap_step_types_abort_repetition_on_failure_even_if_optional(self):
         hit = {"found": True, "score": 1, "cx": 10, "cy": 20, "angle": 0, "rotations_tried": 1}

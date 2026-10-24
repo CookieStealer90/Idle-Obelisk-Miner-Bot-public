@@ -27,6 +27,7 @@ def _empty_data(start=0, reset=0):
     return {
         "stats_start_ts": start,
         "hourly_buckets": {},
+        "hourly_bucket_timezone": "UTC",
         "alltime_gems": 0,
         "alltime_uptime_s": 0,
         "alltime_uptime_complete": True,
@@ -41,7 +42,8 @@ class GemStatistics:
         self._active = False  # Explicitly enabled by the Freebies worker lifecycle.
         self._session_uptime = 0
         self._session_gems = 0
-        self._last_tick = time.time()
+        self._last_monotonic = time.monotonic()
+        self._dirty = False
         self._data = _empty_data()
         self._load()
         self._tick_thread = threading.Thread(target=self._uptime_ticker, daemon=True,
@@ -67,25 +69,43 @@ class GemStatistics:
                 bucket.get("uptime_s", 0) for bucket in data["hourly_buckets"].values())
             data["alltime_uptime_complete"] = not bool(
                 data["stats_start_ts"] or data.get("alltime_gems", 0))
+        timezone = data.get("hourly_bucket_timezone")
+        if timezone not in (None, "UTC"):
+            raise ValueError("Unsupported gem statistics bucket timezone")
+        if timezone is None:
+            # Legacy keys have no offset. Interpret them in the installation's
+            # local timezone once; already merged DST hours cannot be recovered.
+            buckets = {}
+            for key, bucket in data["hourly_buckets"].items():
+                timestamp = datetime.datetime.strptime(key, "%Y-%m-%d-%H").timestamp()
+                target = buckets.setdefault(self._bucket_key(timestamp), {"gems": 0, "uptime_s": 0})
+                target["gems"] += bucket.get("gems", 0)
+                target["uptime_s"] += bucket.get("uptime_s", 0)
+            data["hourly_buckets"] = buckets
+            data["hourly_bucket_timezone"] = "UTC"
+            self._dirty = True
         self._data.update(data)
 
     def _save(self):
         atomic_write_json(_STATS_FILE, self._data)
+        self._dirty = False
 
     def _bucket_key(self, ts=None):
-        dt = datetime.datetime.fromtimestamp(time.time() if ts is None else ts)
+        dt = datetime.datetime.fromtimestamp(time.time() if ts is None else ts, datetime.timezone.utc)
         return dt.strftime("%Y-%m-%d-%H")
 
     def _advance(self, now):
         """Account only this process's active interval, under self._lock."""
-        elapsed = max(0, now - self._last_tick)
-        self._last_tick = now
+        monotonic = time.monotonic()
+        elapsed = max(0, monotonic - self._last_monotonic)
+        self._last_monotonic = monotonic
         if self._active and elapsed:
             bucket = self._data["hourly_buckets"].setdefault(
                 self._bucket_key(now), {"gems": 0, "uptime_s": 0})
             bucket["uptime_s"] += elapsed
             self._session_uptime += elapsed
             self._data["alltime_uptime_s"] += elapsed
+            self._dirty = True
         self._prune(now)
 
     def set_active(self, active):
@@ -95,7 +115,9 @@ class GemStatistics:
             self._active = bool(active)
             if self._active and not self._data["stats_start_ts"]:
                 self._data["stats_start_ts"] = now
-            self._save()
+                self._dirty = True
+            if self._dirty:
+                self._save()
 
     def _uptime_ticker(self):
         while True:
@@ -103,27 +125,26 @@ class GemStatistics:
             try:
                 with self._lock:
                     self._advance(time.time())
-                    if self._data["stats_start_ts"]:
+                    if self._dirty:
                         self._save()
             except Exception as exc:
                 warnings.warn(f"Gem statistics could not be saved: {exc}", RuntimeWarning)
 
     def _prune(self, now=None):
-        cutoff = datetime.datetime.fromtimestamp(time.time() if now is None else now)
-        cutoff -= datetime.timedelta(days=_PRUNE_DAYS)
-        cutoff_key = cutoff.strftime("%Y-%m-%d-%H")
+        cutoff_key = self._bucket_key((time.time() if now is None else now) - _PRUNE_DAYS * 86400)
         for key in list(self._data["hourly_buckets"]):
             if key < cutoff_key:
                 del self._data["hourly_buckets"][key]
+                self._dirty = True
 
-    def record_claim(self, gem_type="gem", amount=None):
-        """Record configured yield only while active; return None when paused."""
+    def record_claim(self, gem_type="gem", amount=None, *, in_flight=False):
+        """Record active claims, including a tap already sent before pause."""
         if amount is None:
             import config.settings as settings
             amount = getattr(settings, "FREEBIES_DIAMONDS_PER_CLAIM", 5)
         amount = int(amount)
         with self._lock:
-            if not self._active:
+            if not self._active and not in_flight:
                 return None
             now = time.time()
             self._advance(now)
@@ -134,6 +155,7 @@ class GemStatistics:
             self._data["alltime_gems"] += amount
             if not self._data["first_event_ts"]:
                 self._data["first_event_ts"] = now
+            self._dirty = True
             self._save()
             return amount
 
@@ -141,23 +163,24 @@ class GemStatistics:
         with self._lock:
             now = time.time()
             previous = self._data
+            previous_dirty = self._dirty
             self._data = _empty_data(start=now if self._active else 0, reset=now)
             try:
                 self._save()
             except Exception:
                 self._data = previous
+                self._dirty = previous_dirty
                 raise
             self._session_gems = 0
             self._session_uptime = 0
-            self._last_tick = now
+            self._last_monotonic = time.monotonic()
 
     def get_stats(self):
         with self._lock:
             now = time.time()
             self._advance(now)
-            now_dt = datetime.datetime.fromtimestamp(now)
-            h24_cutoff = (now_dt - datetime.timedelta(hours=24)).strftime("%Y-%m-%d-%H")
-            d7_cutoff = (now_dt - datetime.timedelta(days=7)).strftime("%Y-%m-%d-%H")
+            h24_cutoff = self._bucket_key(now - 86400)
+            d7_cutoff = self._bucket_key(now - 7 * 86400)
             gems_24h = gems_7d = uptime_24h = uptime_7d = 0
             for key, bucket in self._data["hourly_buckets"].items():
                 if key >= d7_cutoff:

@@ -4,6 +4,7 @@ const {readFileSync} = require('node:fs');
 const {join} = require('node:path');
 const {test} = require('node:test');
 const vm = require('node:vm');
+const esc = s => String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
 test('Founders priority, chain limit and bounded Buy retries render and save', () => {
   const container = {innerHTML:''};
@@ -13,7 +14,7 @@ test('Founders priority, chain limit and bounded Buy retries render and save', (
     ['founders','FOUNDERS_MAX_CLAIMS_PER_CYCLE','2'],
   ].map(([section,key,value])=>({dataset:{section,key},value}));
   let saved;
-  const context = vm.createContext({
+  const context = vm.createContext({esc,
     document:{getElementById(){return container;},querySelectorAll(){return inputs;}},
     fetch(url,options){saved=JSON.parse(options.body);return Promise.resolve({json:()=>({ok:true})});},
     showToast(){},
@@ -38,7 +39,7 @@ test('Freebie-Gems FIRST and SLOW controls explain phases and save numeric secon
     ['FREEBIES_CHECK_INTERVAL_S_FIRST','90'], ['FREEBIES_CHECK_INTERVAL_S_SLOW','2700'],
   ].map(([key,value])=>({dataset:{section:'freebies',key},value}));
   let saved;
-  const context = vm.createContext({
+  const context = vm.createContext({esc,
     document:{getElementById(){return container;},querySelectorAll(){return inputs;}},
     fetch(url,options){saved=JSON.parse(options.body);return Promise.resolve({json:()=>({ok:true})});},
     showToast(){},
@@ -62,7 +63,7 @@ test('Founders FIRST and SLOW intervals render with descriptions and save as num
     ['FOUNDERS_CHECK_INTERVAL_S_FIRST','45'], ['FOUNDERS_CHECK_INTERVAL_S_SLOW','7200'],
   ].map(([key,value])=>({dataset:{section:'founders',key},value}));
   let saved;
-  const context = vm.createContext({
+  const context = vm.createContext({esc,
     document:{getElementById(){return container;},querySelectorAll(){return inputs;}},
     fetch(url,options){saved=JSON.parse(options.body);return Promise.resolve({json:()=>({ok:true})});},
     showToast(){},
@@ -87,7 +88,7 @@ test('humanized tap controls render and save typed settings', () => {
     ['TAP_HOLD_VARIANCE_PCT','25,5'], ['TAP_JITTER_PX','6'],
   ].map(([key,value])=>({dataset:{section:'tapping',key},value}));
   let saved;
-  const context = vm.createContext({
+  const context = vm.createContext({esc,
     document:{getElementById(){return container;},querySelectorAll(){return inputs;}},
     fetch(url,options){saved=JSON.parse(options.body);return Promise.resolve({json:()=>({ok:true})});},
     showToast(){},
@@ -113,7 +114,7 @@ test('settings preserve strings and arrays, accept decimal commas and do not tru
     ['freebies', 'FREEBIES_SCROLL_ATTEMPTS', '3oops'],
   ].map(([section, key, value, ftype]) => ({dataset:{section,key,ftype},value}));
   let saved;
-  const context = vm.createContext({
+  const context = vm.createContext({esc,
     document:{querySelectorAll(){return inputs;}},
     fetch(url, options){saved=JSON.parse(options.body);return Promise.resolve({json:()=>({ok:true})});},
     showToast(){},
@@ -138,7 +139,7 @@ test('workflow editor saves blank areas as empty arrays and preserves valid coor
   const body = {dataset:{wfkey:'wf'},querySelectorAll(selector){
     return selector.startsWith('input[data-path]') ? [area] : [];
   }};
-  const context = vm.createContext({
+  const context = vm.createContext({esc,
     localStorage:{getItem(){return null;}},
     document:{querySelectorAll(){return [body];}},
   });

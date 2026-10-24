@@ -16,6 +16,7 @@ from config.notice_defaults import NOTICE_DEFAULTS
 from config.user_overrides import apply_overrides_to_settings, normalize_user_settings
 from core.notice_archive import NoticeArchive
 from core.notice_detection import detect_notice
+from core.image_io import read_image
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -29,7 +30,7 @@ def load(name, path):
 
 def fixture(variant):
     image = np.full((1600, 900, 3), 180, np.uint8)
-    frame = cv2.imread(str(ROOT / "images" / "Notices" / (variant + "_frame.png")))
+    frame = read_image(ROOT / "images" / "Notices" / (variant + "_frame.png"))
     y = 772 if variant == "level" else 750
     image[y:y + frame.shape[0], :frame.shape[1]] = frame
     return image
@@ -66,6 +67,34 @@ class DetectionTests(unittest.TestCase):
 
 
 class ArchiveTests(unittest.TestCase):
+    def test_transient_read_failure_is_retried_without_touching_the_png(self):
+        self.archive.prepare(self.crop, "level", 1)
+        with patch("core.notice_archive.Image.open", side_effect=PermissionError("temporarily locked")):
+            self.assertEqual(self.archive.snapshot(), ([], 1))
+        self.assertEqual(len(self.archive.entries()), 1)
+        self.assertEqual(self.archive.unreadable_count, 0)
+
+    def test_unchanged_refreshes_reuse_metadata_but_external_changes_are_detected(self):
+        identifier, _ = self.archive.prepare(self.crop, "level", 1)
+        with patch.object(self.archive, "_entry", wraps=self.archive._entry) as read:
+            entries, unreadable = self.archive.snapshot()
+            self.assertEqual(len(entries), 1)
+            self.assertEqual(unreadable, 0)
+            entries[0]["variant"] = "client mutation"
+            self.assertEqual(self.archive.entries()[0]["variant"], "level")
+            self.assertEqual(read.call_count, 1)
+            path = Path(self.tmp.name) / (identifier + ".png")
+            path.write_bytes(b"corrupt")
+            self.assertEqual(self.archive.snapshot(), ([], 1))
+            self.assertEqual(self.archive.snapshot(), ([], 1))
+            self.assertEqual(read.call_count, 2)
+            path.unlink()
+            self.assertEqual(self.archive.snapshot(), ([], 0))
+            self.archive.clear_pending()
+            self.archive.prepare(self.crop, "level", 1)
+            self.assertEqual(len(self.archive.entries()), 1)
+            self.assertEqual(read.call_count, 3)
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)

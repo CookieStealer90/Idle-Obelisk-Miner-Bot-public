@@ -13,8 +13,8 @@ archive = NoticeArchive(s.TEMP_DIR / "notices")
 @notices_bp.get("/api/notices")
 def list_notices():
     try:
-        entries = archive.entries()
-        return jsonify({"entries": entries, "unreadable": archive.unreadable_count})
+        entries, unreadable = archive.snapshot()
+        return jsonify({"entries": entries, "unreadable": unreadable})
     except (OSError, ValueError, KeyError) as exc:
         return jsonify({"error": f"Cannot read notice archive: {exc}"}), 503
 

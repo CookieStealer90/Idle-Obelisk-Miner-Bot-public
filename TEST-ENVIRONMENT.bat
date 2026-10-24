@@ -17,13 +17,18 @@ echo [1/5] Finding a working Python with OpenCV (cv2)... [cite: 3]
 
 set "PYSEL="
 
-for %%V in (3.13 3.12 3.11 3.10 3.9 3.8) do (
+if exist "%~dp0.venv\Scripts\python.exe" (
+    set PYSEL="%~dp0.venv\Scripts\python.exe"
+    goto :PY_FOUND
+)
+
+for %%V in (3.13 3.12 3.11 3.10) do (
     py -%%V -c "import sys" >nul 2>&1
     if not errorlevel 1 (
         py -%%V -c "import cv2" >nul 2>&1
         if not errorlevel 1 (
             set "PYSEL=py -%%V"
-            goto :PY_FOUND [cite: 4]
+            goto :PY_FOUND
         )
     )
 )
@@ -36,7 +41,7 @@ if not errorlevel 1 (
         python -c "import cv2" >nul 2>&1
         if not errorlevel 1 (
             set "PYSEL=python"
-            goto :PY_FOUND [cite: 5]
+            goto :PY_FOUND
         )
     )
 )

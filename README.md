@@ -121,7 +121,7 @@ ROIs use **`x1, y1, x2, y2`**, in Android screen pixels. Thresholds are match sc
 - **Notices:** supported frames are matched without reading their text. The default regular interval is 45 minutes with ±15% variance. Saving must succeed before dismissal. A full archive stops further saves and taps rather than deleting unread images.
 - **Humanized Taps:** defaults are 100 ms with ±30% duration variation. Explicit workflow hold durations remain exact. Feature/step jitter can override global position jitter. Variation does not guarantee undetectable automation.
 
-The visibility fields `gem_statistics_enabled` and `screenshot_visible` exposed under Startup Defaults are not consistently applied by the current override loader. Use the dashboard panel controls rather than relying on these fields for visibility after restart.
+Under Startup Defaults, `gem_statistics_enabled` controls statistics tracking and its card; `screenshot_visible` controls the screenshot card. Both apply after restart. The level startup switch appears only here. Legacy `detect_level.DETECT_LEVEL_ENABLED` migrates to this switch, preserving its previous effective precedence; saving removes the duplicate field.
 
 ## Configuration: Workflows
 
@@ -187,6 +187,8 @@ The information icon beside the list opens a guide to steps, conditions and edit
 
 Statistics estimate Freebie-Gems from successful claim inputs and the configured amount per claim. They do not read the actual game balance or independently confirm rewards.
 
+**Only regular Freebie-Gems are counted; additional "Stonks" bonus gems are excluded.** This feature still has substantial room for improvement and will be revisited in a future update. More complete tracking is challenging without OCR, but there is already an idea for an alternative approach.
+
 | Row or column | Meaning |
 | --- | --- |
 | **Session** | Gems and active time since process start or statistics reset. |
@@ -207,8 +209,6 @@ Freebies OFF pauses uptime and claim recording and shows **Freebies inactive**. 
 ### Last Screenshot
 
 Expand the panel and enable **Show newest screenshot** to view an existing cached image. It refreshes every five seconds; clicking it refreshes manually. The viewer does not request a new Android capture.
-
-<img src="images/assets/readme-screenshot-viewer.jpg" width="450" alt="Last Screenshot panel displaying a cached portrait game image">
 
 Configure candidate filenames under **Settings → screenshot_viewer**. An older last successful image may remain available when captures fail, so this viewer alone does not prove the game is still active.
 
@@ -240,23 +240,25 @@ Other devices or renderers may require calibration. The existing setup recommend
 
 1. Start the emulator and game in English. Confirm Android capture dimensions and the ADB device address.
 2. Put the project in a writable directory. Discovery checks emulator paths, `adb.exe` in the project's parent directory and finally `PATH`.
-3. Install dependencies:
+3. Run `INSTALL-ENVIRONMENT.bat`. It creates a project-local `.venv` and installs `requirements.txt` into that interpreter. Installation errors remain visible. The equivalent command is:
 
    ```powershell
-   py -m pip install -r requirements.txt
+   py -3 tools/python_environment.py --install
    ```
 
-4. Optionally run `TEST-ENVIRONMENT.bat` to check dependencies and ADB. It performs imports, can contact ADB and writes temporary files; it is not a read-only regression test. `INSTALL-ENVIRONMENT.bat` installs packages.
+4. Optionally run `TEST-ENVIRONMENT.bat` to check dependencies and ADB. It prefers the project's `.venv`, performs imports, can contact ADB and writes temporary files; it is not a read-only regression test.
 5. Run `StartWebUI.vbs` or `StartWebUI.bat` for tray operation. For a console session:
 
    ```powershell
-   python main.py
+   .\.venv\Scripts\python.exe main.py
    ```
 
 6. Open **http://localhost:6001**. From another trusted LAN device, open **http://HOST-LAN-IP:6001**, replacing `HOST-LAN-IP` with the bot computer's address. A phone's `localhost` refers to the phone itself.
 7. Review Settings, especially ADB, ROIs and Startup Defaults. Save and restart for general settings; review workflow definitions before enabling automation.
 
-The tray menu provides the WebUI, logs, restart and exit. A console session supports another port, for example `python main.py 7000`.
+The tray menu provides the WebUI, logs, restart and exit. Both launchers prefer the project's `.venv`, independent of global `python`/`pythonw` PATH entries. Existing global installations can still launch without a `.venv`; running the installer makes interpreter selection deterministic. An incomplete `.venv` reports an error rather than silently selecting another Python. No existing settings or workflows are replaced by installation.
+
+Use `StartWebUI.bat 7000` or `.\.venv\Scripts\python.exe main.py 7000` for another WebUI port. Tray links and restarts retain that port. Quit and Restart intentionally terminate the process immediately; the latest uncheckpointed statistics time can be lost.
 
 Starting the process starts the bot backend too. Saved startup defaults and workflows can trigger immediate game actions; the dashboard is not a separate preview-only mode.
 
@@ -290,6 +292,8 @@ Validation reports invalid values. Reload distinguishes pending, applied and err
 | `config/web_secret.json` | Automatically generated per-installation Flask signing key. Keep private. |
 | `bot.log` | Rotating application log. |
 
+Tray messages, stdout/stderr and bot messages share this one active log and the same rotation lock. The existing `bot.log.1` and later rotation copies remain available.
+
 Settings/workflow saves use validation and atomic JSON writes. Concurrent browser edits are not merged: the last successful whole-document save wins. Back up settings, workflows, statistics and unread notices before moving installations. JSON files, logs and temporary captures are excluded from Git; committing the source does not back up your local setup.
 
 ## ADB and multiple emulator instances
@@ -304,6 +308,16 @@ adb connect 127.0.0.1:16384
 ```
 
 The port is an example; use your instance's actual address. Save and restart after changing the preferred device or fallback ports.
+
+### FAQ: Can I run two emulator instances at the same time?
+
+Yes. Run one bot process per emulator from **separate project directories**, with separate local settings, screenshot caches, statistics and logs. Create each Python environment in its own directory; do not copy an existing `.venv` between locations. Each installation should generate its own `config/web_secret.json`.
+
+For example, assign emulator A to `DEVICE=127.0.0.1:16384` and WebUI port 6001, and emulator B to `DEVICE=127.0.0.1:16416` and WebUI port 6002. These device ports are examples; inspect your actual emulator addresses first.
+
+Set **ADB_AUTO_CONNECT=false** in each copy to disable automatic connection, fallback scanning and device switching. Establish the desired emulator connection externally first, for example with `adb connect ADDRESS`, then start that copy. A fixed DEVICE alone does not disable fallback when automatic connection remains enabled. Start the second dashboard with `StartWebUI.bat 6002` and verify its displayed device before enabling automation.
+
+There is intentionally no global single-instance restriction. Action locks and file locks apply within one process. Starting two copies from the same directory would share files and is not the supported two-emulator setup. During ADB timeouts, dashboard commands may wait for the central watchdog; this dispatch behavior is unchanged.
 
 ## How it works
 

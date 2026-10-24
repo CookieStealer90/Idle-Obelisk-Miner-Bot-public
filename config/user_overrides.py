@@ -63,6 +63,14 @@ def normalize_user_settings(overrides: dict) -> dict:
         if not isinstance(values, dict):
             raise ValueError(f"settings.{section}: expected object")
     result = migrate_founders_settings(overrides)
+    if "detect_level" in result:
+        level = dict(result["detect_level"])
+        if "DETECT_LEVEL_ENABLED" in level:
+            startup = dict(result.get("startup_defaults", {}))
+            # Preserve the old effective precedence once, then expose one switch.
+            startup["detect_level_enabled"] = level.pop("DETECT_LEVEL_ENABLED")
+            result["startup_defaults"] = startup
+        result["detect_level"] = level
     if "freebies" in result:
         freebies = dict(result["freebies"])
         if "FREEBIES_CHECK_INTERVAL_S" in freebies:
@@ -240,6 +248,10 @@ def apply_overrides_to_settings(settings_globals: dict, overrides: dict):
             settings_globals[key] = value
 
     sd = overrides.get("startup_defaults", {})
+    for key, target in (("gem_statistics_enabled", "GEM_STATISTICS_ENABLED_DEFAULT"),
+                        ("screenshot_visible", "SCREENSHOT_VISIBLE_DEFAULT")):
+        if key in sd:
+            settings_globals[target] = sd[key]
     for key, value in overrides.get("notices", {}).items():
         settings_globals[key] = tuple(int(c) for c in value) if key == "NOTICES_DETECT_ROI" else value
     if "NOTICES_ENABLED" in sd:
@@ -257,7 +269,6 @@ def apply_overrides_to_settings(settings_globals: dict, overrides: dict):
 
     dl = overrides.get("detect_level", {})
     _dl_keys = (
-        "DETECT_LEVEL_ENABLED",
         "DETECT_LEVEL_ROI",
         "DETECT_LEVEL_INTERVAL_S",
         "DETECT_LEVEL_THRESHOLD",

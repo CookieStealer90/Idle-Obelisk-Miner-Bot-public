@@ -72,9 +72,9 @@ function copyWorkflow(slug){
   slot.innerHTML = `
     <div class="wfe-copy-inner">
       <span class="wfe-copy-label">Copy as:</span>
-      <input id="wfe-copy-input-${esc(slug)}" class="wfe-copy-input" value="${esc(defaultName)}" onkeydown="if(event.key==='Enter')confirmCopyWorkflow('${esc(slug)}');if(event.key==='Escape')cancelCopyWorkflow('${esc(slug)}')">
-      <button class="btn primary wfe-mini" onclick="confirmCopyWorkflow('${esc(slug)}')">Create</button>
-      <button class="btn wfe-mini" onclick="cancelCopyWorkflow('${esc(slug)}')">Cancel</button>
+      <input id="wfe-copy-input-${esc(slug)}" class="wfe-copy-input" value="${esc(defaultName)}" onkeydown="if(event.key==='Enter')confirmCopyWorkflow(${jsArg(slug)});if(event.key==='Escape')cancelCopyWorkflow(${jsArg(slug)})">
+      <button class="btn primary wfe-mini" onclick="confirmCopyWorkflow(${jsArg(slug)})">Create</button>
+      <button class="btn wfe-mini" onclick="cancelCopyWorkflow(${jsArg(slug)})">Cancel</button>
       <div class="wfe-copy-err" id="wfe-copy-err-${esc(slug)}"></div>
     </div>`;
   const input = document.getElementById('wfe-copy-input-'+slug);

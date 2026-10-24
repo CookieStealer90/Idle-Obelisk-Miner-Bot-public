@@ -21,7 +21,7 @@ from datetime import datetime
 
 import config.runtime_flags as runtime_flags
 import config.app_state as state
-from config.settings import LOG_MAX_SIZE_MB, LOG_BACKUP_COUNT
+import config.settings as settings
 
 _log_lock = threading.Lock()
 
@@ -41,14 +41,14 @@ def _rotate_log_if_needed(log_path: str):
             return
         size_bytes = os.path.getsize(log_path)
         size_mb = size_bytes / (1024 * 1024)
-        if size_mb < LOG_MAX_SIZE_MB:
+        if size_mb < settings.LOG_MAX_SIZE_MB:
             return
 
-        oldest_backup = f"{log_path}.{LOG_BACKUP_COUNT}"
+        oldest_backup = f"{log_path}.{settings.LOG_BACKUP_COUNT}"
         if os.path.exists(oldest_backup):
             os.remove(oldest_backup)
 
-        for i in range(LOG_BACKUP_COUNT - 1, 0, -1):
+        for i in range(settings.LOG_BACKUP_COUNT - 1, 0, -1):
             src = f"{log_path}.{i}"
             dst = f"{log_path}.{i + 1}"
             if os.path.exists(src):
@@ -68,12 +68,18 @@ def _rotate_log_if_needed(log_path: str):
 #  Internal targets
 # ============================================================
 
+def log_path():
+    """Resolve the same file for startup, console and normal bot logging."""
+    path = getattr(state.cfg, "FILE_LOG_PATH", "bot.log")
+    return os.path.join(str(settings.BASE_DIR), path)
+
+
 def _write_to_file(msg: str):
     """Write a timestamped line to bot.log (with rotation)."""
     try:
-        if not getattr(state.cfg, "ENABLE_FILE_LOG", False):
+        if not getattr(state.cfg, "ENABLE_FILE_LOG", True):
             return
-        path = getattr(state.cfg, "FILE_LOG_PATH", "bot.log")
+        path = log_path()
         ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         with _log_lock:
@@ -83,6 +89,38 @@ def _write_to_file(msg: str):
     except Exception:
         if not runtime_flags.SUPPRESS_EXCEPTIONS:
             raise
+
+
+class FileLogStream:
+    """Line-buffered tray stdout/stderr using the bot's lock and rotation.
+
+    Partial writes are kept per thread so concurrent print calls cannot merge
+    unrelated lines. Never call the UI bridge or print from this stream.
+    """
+    encoding = "utf-8"
+
+    def __init__(self):
+        self._local = threading.local()
+
+    def write(self, message):
+        pending = getattr(self._local, "pending", "") + message
+        lines = pending.split("\n")
+        self._local.pending = lines.pop()
+        for line in lines:
+            self._emit(line.rstrip("\r"))
+        return len(message)
+
+    def _emit(self, message):
+        if message:
+            try:
+                _write_to_file(message)
+            except Exception:
+                pass  # stderr cannot report its own write failure recursively
+
+    def flush(self):
+        pending = getattr(self._local, "pending", "")
+        self._local.pending = ""
+        self._emit(pending)
 
 
 def _resolve_push_log():

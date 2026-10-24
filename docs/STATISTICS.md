@@ -3,8 +3,10 @@
 The Freebie worker initializes statistics at startup and forwards its initial
 enabled state and every ON/OFF transition. Dashboard requests do not activate
 tracking. Search time, configured waits, waiting for the game and waiting for
-the action lock count while the Freebie switch is ON. Disabled time does not.
-There is intentionally no special handling of computer sleep.
+the action lock count while the Freebie switch is ON and statistics tracking
+is enabled in Startup Defaults. Disabled time does not. Active durations use
+the platform monotonic clock, independently of wall-clock corrections. Computer
+sleep follows that platform clock's suspend behavior; it is not special-cased.
 
 ## Lifecycle and Averages
 
@@ -13,6 +15,8 @@ There is intentionally no special handling of computer sleep.
 - Uptime and both automatic/manual claim recording pause while OFF. The GUI
   shows **Freebies inactive**, greys the table and disables manual addition.
   The manual-add endpoint also rejects inactive requests with HTTP 409.
+  A successful ADB claim already in flight when OFF arrives remains counted;
+  no further scroll, claim or close tap starts from that cancelled cycle.
 - Wall-clock time continues during disabled and offline periods. The 24h and
   7d rows become available after 24/168 real hours from statistics start, even
   with zero claims. Their hourly buckets continue expiring during pauses.
@@ -36,7 +40,10 @@ separate permanent sums; deleting buckets does not change either sum.
 
 Statistics use the existing atomic JSON writer. Save errors reach API/feature
 callers; background save errors issue a warning and do not stop the ticker.
-Active uptime is checkpointed every minute and on claims/switch changes. An
+Active uptime is checkpointed every minute and on claims/switch changes. Only
+changed data is written: a paused, unchanged ticker performs no JSON write or
+fsync. Pruning expired buckets, migration and failed-save retries still count
+as changes. An
 abrupt process exit can lose the uncheckpointed tail. The enabled flag is not
 restored from statistics: the worker supplies the configured state each start.
 
@@ -47,6 +54,15 @@ historical All-Time uptime as unavailable. Its dependent uptime average is also
 unavailable; it is not represented as an exact reconstructed value. A user reset
 starts complete tracking. Migration never resets the user's data automatically.
 Unparseable or structurally incompatible files are not silently replaced.
+
+Hourly keys now represent UTC, marked by `hourly_bucket_timezone: "UTC"`.
+Rolling cutoffs use elapsed seconds, so future timezone changes and repeated
+daylight-saving hours do not merge new buckets. Files without this marker are
+converted once using the installation's current local timezone, preserving
+bucket sums and permanent totals. Perform the first migration in the original
+timezone before moving a legacy file elsewhere. An already merged repeated
+hour or an unknown historical timezone cannot be reconstructed exactly.
+Migration is saved through the normal atomic writer, not by a source-code edit.
 
 ## Verification
 

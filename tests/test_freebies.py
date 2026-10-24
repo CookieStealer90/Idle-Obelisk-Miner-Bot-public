@@ -22,6 +22,68 @@ class FreebieScheduleTests(unittest.TestCase):
         self.state.ingame_action_lock = threading.Lock()
         self.feature.is_game_running.return_value = True
 
+    def test_disable_or_reactivation_after_open_prevents_claim_and_close(self):
+        for reactivate in (False, True):
+            with self.subTest(reactivate=reactivate):
+                self.state.freebies_enabled = True
+                self.feature.tap.reset_mock()
+                def disable(*args, **kwargs):
+                    self.feature.toggle()
+                    if reactivate:
+                        self.feature.toggle()
+                    return True
+                self.feature.tap.side_effect = disable
+                self.assertFalse(self.feature._run_claim_cycle())
+                self.feature.tap.assert_called_once()
+                self.assertEqual(self.state.freebies_claimed_count, 0)
+
+    def test_disable_during_long_animation_wait_stops_before_next_action(self):
+        self.feature.s.FREEBIES_POST_OPEN_DELAY_S = 60
+        def disable(seconds):
+            self.assertLessEqual(seconds, 0.1)
+            self.feature.toggle()
+        self.feature.time.sleep.side_effect = disable
+        self.assertFalse(self.feature._run_claim_cycle())
+        self.feature.time.sleep.assert_called_once()
+        self.feature.tap.assert_called_once()
+
+    def test_disable_during_search_prevents_scroll_and_claim(self):
+        calls = 0
+        def match(*args, **kwargs):
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                self.feature.toggle()
+                return {"found": False, "score": 0}
+            return self.hit
+        self.feature.find_template.side_effect = match
+        self.assertFalse(self.feature._run_claim_cycle())
+        self.feature.tap.assert_called_once()
+        self.feature.scroll_down.assert_not_called()
+        self.feature.scroll_up.assert_not_called()
+
+    def test_disabled_statistics_does_not_track_enabled_freebies(self):
+        self.state.gem_statistics_enabled = False
+        self.feature._sync_statistics(True)
+        self.stats.get_gem_statistics.return_value.set_active.assert_called_once_with(False)
+        self.feature._run_claim_cycle()
+        self.stats.get_gem_statistics.return_value.record_claim.assert_not_called()
+
+    def test_disable_during_claim_counts_sent_tap_but_prevents_close(self):
+        calls = 0
+        def tap(*args, **kwargs):
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                self.feature.toggle()
+            return True
+        self.feature.tap.side_effect = tap
+        self.assertFalse(self.feature._run_claim_cycle())
+        self.assertEqual(calls, 2)
+        self.assertEqual(self.state.freebies_claimed_count, 1)
+        self.stats.get_gem_statistics.return_value.record_claim.assert_called_once_with(
+            "gem", amount=28, in_flight=True)
+
     def run_checks(self, count=1):
         sleeps = []
 

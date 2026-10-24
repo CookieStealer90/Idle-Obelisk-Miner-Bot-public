@@ -45,9 +45,9 @@ function renderWorkflowEditor(preserveOpen){
     h += `<div><span class="wfe-id">${esc(wf.name||slug)}</span>`;
     h += `<span class="wfe-desc">${esc(wf.description||'')}</span></div>`;
     h += `<div class="wfe-wf-hdr-ctrls" onclick="event.stopPropagation()">`;
-    h += `<button class="wfe-step-btn move" ${canUp?'':'disabled style="visibility:hidden"'} onclick="moveWf('${esc(slug)}',-1)" title="Move up">\u25B2</button>`;
-    h += `<button class="wfe-step-btn move" ${canDown?'':'disabled style="visibility:hidden"'} onclick="moveWf('${esc(slug)}',1)" title="Move down">\u25BC</button>`;
-    h += `<button class="wfe-step-btn copy" onclick="copyWorkflow('${esc(slug)}')" title="Duplicate workflow">\u29C9</button>`;
+    h += `<button class="wfe-step-btn move" ${canUp?'':'disabled style="visibility:hidden"'} onclick="moveWf(${jsArg(slug)},-1)" title="Move up">\u25B2</button>`;
+    h += `<button class="wfe-step-btn move" ${canDown?'':'disabled style="visibility:hidden"'} onclick="moveWf(${jsArg(slug)},1)" title="Move down">\u25BC</button>`;
+    h += `<button class="wfe-step-btn copy" onclick="copyWorkflow(${jsArg(slug)})" title="Duplicate workflow">\u29C9</button>`;
     h += `</div>`;
     h += `<span class="wp-tier-arrow">\u25B8</span></div>`;
     h += `<div class="wfe-wf-body" data-wfkey="${esc(slug)}">`;
@@ -57,8 +57,8 @@ function renderWorkflowEditor(preserveOpen){
     h += `<span style="font-size:.6rem;color:var(--text-dim)">slug: <code>${esc(slug)}</code></span>`;
     h += `<div style="flex:1"></div>`;
     h += `<label style="font-size:.6rem;display:flex;align-items:center;gap:4px">`;
-    h += `<input type="checkbox" data-wfmeta="inactive" ${inactive?'checked':''} onchange="onInactiveToggle('${esc(slug)}',this)"> inactive</label>`;
-    h += `<button class="wfe-step-btn del" onclick="delWorkflow('${esc(slug)}')" title="Delete workflow">\u2715</button>`;
+    h += `<input type="checkbox" data-wfmeta="inactive" ${inactive?'checked':''} onchange="onInactiveToggle(${jsArg(slug)},this)"> inactive</label>`;
+    h += `<button class="wfe-step-btn del" onclick="delWorkflow(${jsArg(slug)})" title="Delete workflow">\u2715</button>`;
     h += `</div>`;
 
     h += `<div id="wfe-copy-${esc(slug)}" class="wfe-copy-row" style="display:none"></div>`;
@@ -92,15 +92,15 @@ function renderWorkflowEditor(preserveOpen){
 }
 
 function renderAddStepRow(slug, containerPath, depth){
-  const selId = `wfe-newtype-${esc(slug)}-${esc(containerPath||'root')}`;
+  const selId = `wfe-newtype-${slug}-${containerPath||'root'}`;
   let h = `<div class="wfe-add-step" data-container-path="${esc(containerPath)}" data-slug="${esc(slug)}">`;
-  h += `<select id="${selId}">`;
+  h += `<select id="${esc(selId)}">`;
   STEP_TYPES.forEach(t=>{
     if(t.value === 'if' && depth >= 1) return;  // No nested if
     h += `<option value="${t.value}">${t.label}</option>`;
   });
   h += `</select>`;
-  h += `<button class="btn" style="font-size:.62rem;padding:3px 8px" onclick="addStep('${esc(slug)}','${esc(containerPath)}','${selId}')">+ Add Step</button>`;
+  h += `<button class="btn" style="font-size:.62rem;padding:3px 8px" onclick="addStep(${jsArg(slug)},${jsArg(containerPath)},${jsArg(selId)})">+ Add Step</button>`;
   h += `</div>`;
   return h;
 }
@@ -120,11 +120,11 @@ function renderStep(step, path, slug){
   h += `<span class="wfe-step-num">${_pathDisplayNum(path)}</span>`;
   h += `<span class="wfe-step-type">${esc(label)}</span>`;
   h += `<div class="wfe-step-controls">`;
-  h += `<button class="wfe-step-btn toggle-dis" onclick="toggleStepDisabled('${esc(slug)}','${esc(path)}')" title="${isDis?'Enable':'Disable'} step">${isDis?'\u25C9':'\u25CE'}</button>`;
-  h += `<button class="wfe-step-btn move" onclick="moveStep('${esc(slug)}','${esc(path)}',-1)" title="Move up">\u25B2</button>`;
-  h += `<button class="wfe-step-btn move" onclick="moveStep('${esc(slug)}','${esc(path)}',1)" title="Move down">\u25BC</button>`;
-  h += `<button class="wfe-step-btn copy" onclick="copyStep('${esc(slug)}','${esc(path)}')" title="Duplicate step">\u29C9</button>`;
-  h += `<button class="wfe-step-btn del" onclick="delStep('${esc(slug)}','${esc(path)}')" title="Delete">\u2715</button>`;
+  h += `<button class="wfe-step-btn toggle-dis" onclick="toggleStepDisabled(${jsArg(slug)},${jsArg(path)})" title="${isDis?'Enable':'Disable'} step">${isDis?'\u25C9':'\u25CE'}</button>`;
+  h += `<button class="wfe-step-btn move" onclick="moveStep(${jsArg(slug)},${jsArg(path)},-1)" title="Move up">\u25B2</button>`;
+  h += `<button class="wfe-step-btn move" onclick="moveStep(${jsArg(slug)},${jsArg(path)},1)" title="Move down">\u25BC</button>`;
+  h += `<button class="wfe-step-btn copy" onclick="copyStep(${jsArg(slug)},${jsArg(path)})" title="Duplicate step">\u29C9</button>`;
+  h += `<button class="wfe-step-btn del" onclick="delStep(${jsArg(slug)},${jsArg(path)})" title="Delete">\u2715</button>`;
   h += `</div></div>`;
   h += _renderStepNote(step, path);
   h += `<div class="wfe-fields">`;
@@ -154,7 +154,7 @@ function _renderStepNote(step, path){
 }
 
 function renderField(f, val, slug, path, ro, isMeta, stepPath){
-  const id = `wfe-${slug}-${esc(path).replace(/[^a-z0-9_-]/gi,'_')}`;
+  const id = `wfe-${esc(slug)}-${esc(path).replace(/[^a-z0-9_-]/gi,'_')}`;
   const dis = ro?'disabled':'';
   const dataAttr = isMeta ? `data-wfmeta="${path}"` : `data-path="${path}"`;
   let h = `<div class="wfe-field">`;

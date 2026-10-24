@@ -26,35 +26,17 @@ if os.name == "nt":
         pass
 
 # ── Redirect stdout/stderr to log file ───────────────────────────────
-_LOG_PATH = os.path.join(_ROOT, "bot.log")
+from core.file_logger import FileLogStream, log_path
 
-
-class _SafeLogWriter:
-    def __init__(self, path):
-        self.path = path
-
-    def write(self, message):
-        if not message:
-            return
-        try:
-            with open(self.path, "a", encoding="utf-8") as f:
-                f.write(message)
-        except Exception:
-            pass
-
-    def flush(self):
-        pass
-
-
-_log_writer = _SafeLogWriter(_LOG_PATH)
+_LOG_PATH = log_path()
+_log_writer = FileLogStream()
 sys.stdout = _log_writer
 sys.stderr = _log_writer
 
 # ── Logging ──────────────────────────────────────────────────────────
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s [TRAY] %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
+    format="[TRAY] %(message)s",
     stream=sys.stdout,
 )
 log = logging.getLogger("tray_runner")
@@ -69,7 +51,10 @@ import pystray
 from PIL import Image
 
 # ── Constants ────────────────────────────────────────────────────────
-_PORT = 6001
+try:
+    _PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 6001
+except ValueError:
+    _PORT = 6001
 
 # ── Global state ─────────────────────────────────────────────────────
 _server_ready = threading.Event()
@@ -219,7 +204,7 @@ def _on_restart(icon, item):
     if sys.platform == "win32":
         _CREATE = _sp.CREATE_NO_WINDOW
     _sp.Popen(
-        [sys.executable, os.path.join(_ROOT, "tray_runner.py")],
+        [sys.executable, os.path.join(_ROOT, "tray_runner.py"), str(_PORT)],
         cwd=_ROOT,
         creationflags=_CREATE,
     )

@@ -77,7 +77,7 @@ class FreebieResultTests(unittest.TestCase):
         self.assertFalse(self.feature._run_claim_cycle())
         self.assertEqual(self.state.freebies_claimed_count, 1)
         self.assertEqual(self.state.freebies_diamonds_total, 28)
-        self.stats.get_gem_statistics.return_value.record_claim.assert_called_once_with("gem", amount=28)
+        self.stats.get_gem_statistics.return_value.record_claim.assert_called_once_with("gem", amount=28, in_flight=True)
         self.assertTrue(any("reward unverified" in call.args[0] for call in self.feature.bot_log.call_args_list))
 
     def test_failed_scroll_aborts_without_recording_claim(self):

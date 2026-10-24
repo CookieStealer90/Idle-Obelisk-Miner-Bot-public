@@ -1,5 +1,6 @@
 """Persistent, atomic PNG inbox and conservative pending-click tracking."""
 import hashlib
+import math
 import os
 from pathlib import Path
 import re
@@ -9,7 +10,7 @@ import uuid
 from io import BytesIO
 
 import cv2
-from PIL import Image, PngImagePlugin
+from PIL import Image, PngImagePlugin, UnidentifiedImageError
 
 from config.json_store import atomic_write_json, read_json
 
@@ -19,6 +20,7 @@ class NoticeArchive:
     def __init__(self, directory):
         self.directory = Path(directory)
         self.lock = _archive_lock
+        self._entries_cache = {}
 
     def _path(self, identifier):
         if not isinstance(identifier, str) or not re.fullmatch(r"[0-9a-f]{32}", identifier):
@@ -26,21 +28,47 @@ class NoticeArchive:
         return self.directory / (identifier + ".png")
 
     def entries(self):
+        return self.snapshot()[0]
+
+    def snapshot(self):
+        """Stat files on refresh; verify/read PNG metadata only when changed."""
         with self.lock:
             result = []
             self.unreadable_count = 0
+            current = {}
             for path in self.directory.glob("*.png"):
                 try:
-                    self._path(path.stem)
-                    with Image.open(path) as image:
-                        image.verify()
-                    with Image.open(path) as image:
-                        result.append({"id": path.stem, "created_ts": float(image.info["created_ts"]),
-                                       "variant": image.info.get("variant", "notice"),
-                                       "width": image.width, "height": image.height})
+                    stat = path.stat()
+                    signature = (stat.st_mtime_ns, stat.st_ctime_ns, stat.st_size, stat.st_ino)
+                    cached = self._entries_cache.get(path.name)
+                    if cached is not None and cached[0] == signature:
+                        entry = cached[1]
+                    else:
+                        entry = self._entry(path)
+                    current[path.name] = (signature, entry)
+                    if entry is None:
+                        self.unreadable_count += 1
+                    else:
+                        result.append(dict(entry))
                 except (OSError, ValueError, KeyError):
                     self.unreadable_count += 1
-            return sorted(result, key=lambda entry: (entry["created_ts"], entry["id"]))
+            self._entries_cache = current
+            return sorted(result, key=lambda entry: (entry["created_ts"], entry["id"])), self.unreadable_count
+
+    def _entry(self, path):
+        try:
+            self._path(path.stem)
+            with Image.open(path) as image:
+                image.verify()
+            with Image.open(path) as image:
+                created = float(image.info["created_ts"])
+                if not math.isfinite(created):
+                    raise ValueError("Invalid notice timestamp")
+                return {"id": path.stem, "created_ts": created,
+                        "variant": image.info.get("variant", "notice"),
+                        "width": image.width, "height": image.height}
+        except (UnidentifiedImageError, ValueError, KeyError, SyntaxError):
+            return None
 
     def read(self, identifier):
         with self.lock:

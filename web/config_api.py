@@ -46,8 +46,8 @@ def settings_get():
                 "ADB_SCAN_PORTS": s.ADB_SCAN_PORTS,
             },
             "startup_defaults": {
-                "gem_statistics_enabled": True,
-                "screenshot_visible": True,
+                "gem_statistics_enabled": s.GEM_STATISTICS_ENABLED_DEFAULT,
+                "screenshot_visible": s.SCREENSHOT_VISIBLE_DEFAULT,
                 "freebies_enabled": getattr(s, "FREEBIES_ENABLED_DEFAULT", True),
                 "lootbug_enabled": getattr(s, "LOOTBUG_ENABLED_DEFAULT", False),
                 "FOUNDERS_ENABLED": s.FOUNDERS_ENABLED,
@@ -56,7 +56,6 @@ def settings_get():
                 "detect_level_enabled": getattr(s, "DETECT_LEVEL_ENABLED", True),
             },
             "detect_level": {
-                "DETECT_LEVEL_ENABLED": getattr(s, "DETECT_LEVEL_ENABLED", True),
                 "DETECT_LEVEL_ROI": list(getattr(s, "DETECT_LEVEL_ROI", (0, 61, 60, 89))),
                 "DETECT_LEVEL_INTERVAL_S": getattr(s, "DETECT_LEVEL_INTERVAL_S", 60.0),
                 "DETECT_LEVEL_THRESHOLD": getattr(s, "DETECT_LEVEL_THRESHOLD", 0.85),

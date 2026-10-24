@@ -81,6 +81,11 @@ Hover or keyboard focus reveals **Tap to delete**; touch devices show it
 persistently. **Enlarge** opens a preview. Acknowledgement deletes only the
 chosen PNG, then animates its removal. Failed deletion preserves the card and
 reports an error. Visible browsers synchronize within five seconds.
+Listing caches verified PNG metadata per archive instance. Refreshes stat the
+files but reread/verify only new or changed files, including changed corrupt
+files. Deleted files are removed from the cache; unreadable-file counts and
+entries are returned as one locked snapshot. External additions/replacements
+remain visible without a process restart. Polling frequency is unchanged.
 Reduced-motion preferences disable animations. Acknowledgement and detection
 testing never send game input.
 

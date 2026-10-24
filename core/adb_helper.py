@@ -37,15 +37,6 @@ def _run_adb_raw(*args, timeout: int = 10) -> subprocess.CompletedProcess:
     )
 
 
-def _run_adb_device(*args, device: str = None, timeout: int = 30) -> subprocess.CompletedProcess:
-    dev = device or _active_device
-    cmd = [ADB, "-s", dev, *args]
-    return subprocess.run(
-        cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        text=True, timeout=timeout, creationflags=_CREATE_FLAGS,
-    )
-
-
 def _list_devices() -> list:
     try:
         p = _run_adb_raw("devices", timeout=ADB_CONNECT_TIMEOUT)
@@ -198,29 +189,6 @@ def adb(*args, device: str = None, log_fn=None) -> str:
             return p.stdout
         except subprocess.TimeoutExpired:
             if _retry_connection("connection refused", attempt):
-                continue
-            raise RuntimeError("ADB command timed out")
-
-    raise RuntimeError(f"ADB command failed after {ADB_MAX_RETRIES} retries")
-
-
-def adb_bin(*args) -> bytes:
-    """Run ADB command returning raw bytes, with auto-reconnect on failure."""
-    global _active_device
-
-    for attempt in range(ADB_MAX_RETRIES):
-        try:
-            cmd = [ADB, "-s", _active_device, *args]
-            p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                               timeout=30, creationflags=_CREATE_FLAGS)
-            if p.returncode != 0:
-                err = (p.stderr or p.stdout or b"").decode(errors="ignore").strip()
-                if attempt < ADB_MAX_RETRIES - 1 and _reconnect_if_needed(err):
-                    continue
-                raise RuntimeError(err)
-            return p.stdout
-        except subprocess.TimeoutExpired:
-            if attempt < ADB_MAX_RETRIES - 1 and _reconnect_if_needed("connection refused"):
                 continue
             raise RuntimeError("ADB command timed out")
 

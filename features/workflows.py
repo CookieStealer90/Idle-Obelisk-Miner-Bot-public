@@ -20,7 +20,6 @@ Scheduling rules:
       currently executing a step.
     - Master OFF cancels in-progress WFs cooperatively between steps.
 """
-import os
 import random
 import threading
 import time
@@ -681,6 +680,8 @@ def _eval_condition(cond: dict, wf: dict, last_ok: bool, on_missing: str):
         thr = float(cond.get("threshold", 0.8))
         m = find_template(img, tpl_path, roi=roi_t, threshold=thr)
         found = bool(m.get("found"))
+        if not found and on_missing == "fail_wf":
+            return False, True
         if kind == "template_visible":
             return found, False
         return (not found), False
@@ -848,7 +849,7 @@ def _run_workflow(slug: str, wf: dict, manual: bool = False) -> str:
 # ============================================================
 
 def _interruptible_sleep(seconds: float):
-    """Wake on stop/master-cancel. Used between steps and as scheduler tick."""
+    """Preserve action timing; only stop/master-cancel may shorten a wait."""
     if seconds <= 0:
         return
     end = time.monotonic() + seconds
@@ -859,10 +860,7 @@ def _interruptible_sleep(seconds: float):
         if _stop_evt.is_set() or _cancel_evt.is_set():
             return
         # Slice into ≤0.5s chunks so cancel propagates promptly
-        _wake_evt.wait(timeout=min(0.5, remaining))
-        if _wake_evt.is_set():
-            _wake_evt.clear()
-            return
+        _cancel_evt.wait(timeout=min(0.5, remaining))
 
 
 def _next_due(wf: dict) -> float:

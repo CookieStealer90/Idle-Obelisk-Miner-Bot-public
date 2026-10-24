@@ -226,6 +226,8 @@ SCREENSHOT_VIEWER_FILES = ["game_scr.png", "freebie_scr.png", "lootbug_scr.png",
 # config/user_workflows.json. The scheduler (features/workflows.py) runs them
 # on their per-WF interval (with global variance) when the master toggle is ON.
 WORKFLOWS_ENABLED_DEFAULT = True        # master "Auto WF" switch on startup
+GEM_STATISTICS_ENABLED_DEFAULT = True
+SCREENSHOT_VISIBLE_DEFAULT = True
 
 WF_INTERVAL_VARIANCE_PCT = 15.0          # global +/- variance applied to interval
 

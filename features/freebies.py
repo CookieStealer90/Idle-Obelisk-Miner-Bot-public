@@ -68,16 +68,36 @@ def _click_with_log(cx: int, cy: int, what: str):
     return ok
 
 
-def _scroll_to_top():
+def _cycle_active(generation):
+    return (getattr(state, "freebies_enabled", True) and not _stop_evt.is_set()
+            and generation == _activation_generation)
+
+
+def _cycle_wait(seconds, generation):
+    """Keep animation timing, but release a cancelled cycle within 100 ms."""
+    remaining = max(0.0, float(seconds))
+    while remaining > 0:
+        if not _cycle_active(generation):
+            return False
+        delay = min(0.1, remaining)
+        time.sleep(delay)
+        remaining -= delay
+    return _cycle_active(generation)
+
+
+def _scroll_to_top(generation):
     """Scroll area hard up (several full scrolls to reach the top)."""
     pre = int(getattr(s, "FREEBIES_SCROLL_TO_TOP_COUNT", 6))
     area = tuple(getattr(s, "FREEBIES_CLAIM_ROI", (645, 107, 835, 1472)))
     _log(f"[FREEBIES] scrolling to top ({pre}x fast, area={area})")
     for _ in range(pre):
+        if not _cycle_active(generation):
+            return False
         if not scroll_down(area=area, speed="fast"):  # finger DOWN -> list UP
             _log("[FREEBIES] scroll to top failed -> abort cycle")
             return False
-        time.sleep(0.15)
+        if not _cycle_wait(0.15, generation):
+            return False
     return True
 
 
@@ -98,6 +118,8 @@ def _run_claim_cycle() -> bool:
     """
     global _detected_generation
     generation = _activation_generation
+    if not _cycle_active(generation):
+        return False
     # Step 1: Detect base button
     base_img = _fresh_screen()
     if base_img is None:
@@ -120,6 +142,8 @@ def _run_claim_cycle() -> bool:
             _log(f"[FREEBIES] nothing to claim (full={m['score']:.3f} full2={m2['score']:.3f} thr={thr})")
             return False
 
+    if not _cycle_active(generation):
+        return False
     # A detection from before reactivation must not switch the new session.
     first_detection = _detected_generation != generation
     _detected_generation = generation
@@ -131,7 +155,8 @@ def _run_claim_cycle() -> bool:
         return False
 
     # Give the menu a moment to open
-    time.sleep(float(getattr(s, "FREEBIES_POST_OPEN_DELAY_S", 1.0)))
+    if not _cycle_wait(getattr(s, "FREEBIES_POST_OPEN_DELAY_S", 1.0), generation):
+        return False
 
     # Step 2: Search claim button, scrolling if necessary
     max_scroll_attempts = int(getattr(s, "FREEBIES_SCROLL_ATTEMPTS", 4))
@@ -142,24 +167,30 @@ def _run_claim_cycle() -> bool:
         _log(f"[FREEBIES] claim button visible immediately (score={m['score']:.3f})")
     else:
         _log(f"[FREEBIES] claim button not visible (score={m['score']:.3f}) -> scrolling")
-        if not _scroll_to_top():
+        if not _scroll_to_top(generation):
             return False
-        time.sleep(0.4)
+        if not _cycle_wait(0.4, generation):
+            return False
         m = _try_find_claim()
         attempts = 0
         while (not m["found"]) and attempts < max_scroll_attempts:
+            if not _cycle_active(generation):
+                return False
             attempts += 1
             _log(f"[FREEBIES] slow-scroll searching attempt {attempts}/{max_scroll_attempts}")
             if not scroll_up(area=claim_area, speed="slow"):
                 _log("[FREEBIES] search scroll failed -> abort cycle")
                 return False
-            time.sleep(0.4)
+            if not _cycle_wait(0.4, generation):
+                return False
             m = _try_find_claim()
 
     if not m["found"]:
         _log(f"[FREEBIES] claim button NOT found after {max_scroll_attempts} scrolls -> abort cycle")
         return False
 
+    if not _cycle_active(generation):
+        return False
     if not _click_with_log(m["cx"], m["cy"], "claim-button"):
         return False
     amount = int(getattr(s, "FREEBIES_DIAMONDS_PER_CLAIM", 0))
@@ -172,20 +203,24 @@ def _run_claim_cycle() -> bool:
     # Record into Freebie-Gems statistics (survives restarts, tracked per hourly bucket)
     try:
         from features.gem_statistics import get_gem_statistics
-        recorded = get_gem_statistics().record_claim("gem", amount=amount)
+        recorded = (get_gem_statistics().record_claim("gem", amount=amount, in_flight=True)
+                    if getattr(state, "gem_statistics_enabled", True) else None)
         if recorded is not None:
             _log(f"[FREEBIES] Freebie-Gems stats updated (+{recorded})")
     except Exception as e:
         _log(f"[FREEBIES] stats update failed: {type(e).__name__}: {e}")
 
     # Step 3: close the menu
-    time.sleep(float(getattr(s, "FREEBIES_POST_CLAIM_DELAY_S", 1.0)))
+    if not _cycle_wait(getattr(s, "FREEBIES_POST_CLAIM_DELAY_S", 1.0), generation):
+        return False
     close_img = _fresh_screen()
     if close_img is not None:
         close_roi = tuple(getattr(s, "FREEBIES_CLOSE_ROI", (3, 1472, 898, 1547)))
         close_tpl = getattr(s, "FREEBIES_CLOSE_TEMPLATE", "close_menu.png")
         cm = find_template(close_img, close_tpl, roi=close_roi, threshold=thr)
         if cm["found"]:
+            if not _cycle_active(generation):
+                return False
             if not _click_with_log(cm["cx"], cm["cy"], "close-menu"):
                 return False  # claim was sent, but the complete cycle failed
         else:
@@ -250,7 +285,7 @@ def _sync_statistics(active):
     """Keep statistics failures from stopping game automation or its switch."""
     try:
         from features.gem_statistics import get_gem_statistics
-        get_gem_statistics().set_active(active)
+        get_gem_statistics().set_active(active and getattr(state, "gem_statistics_enabled", True))
     except Exception as exc:
         _log(f"[FREEBIES] statistics state update failed: {type(exc).__name__}: {exc}")
 

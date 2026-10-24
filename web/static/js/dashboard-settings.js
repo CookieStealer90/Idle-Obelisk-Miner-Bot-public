@@ -30,7 +30,6 @@ const FIELD_HINTS={
   'workflows_enabled':'master "Auto WF" toggle on bot launch (false = scheduler off)',
   'detect_level_enabled':'auto-start Detect Level feature on bot launch (required by workflow level_* if-conditions)',
   /* detect_level */
-  'DETECT_LEVEL_ENABLED':'master switch for the Detect Level feature (disables level_* if-conditions)',
   'DETECT_LEVEL_ROI':'x1,y1,x2,y2 search area for digit_*_tpl.png on the base screen',
   'DETECT_LEVEL_INTERVAL_S':'seconds between level scans',
   'DETECT_LEVEL_THRESHOLD':'0.0-1.0 match score required per digit',
@@ -66,7 +65,7 @@ const FIELD_HINTS={
   'FREEBIES_SCROLL_TO_TOP_COUNT':'fast scrolls used to reach top first',
   'FREEBIES_POST_OPEN_DELAY_S':'wait after tapping icon before matching claim',
   'FREEBIES_TAP_JITTER_PX':'random +/- pixel jitter on taps',
-  'FREEBIES_DIAMONDS_PER_CLAIM':'logged amount per claim (wired later)',
+  'FREEBIES_DIAMONDS_PER_CLAIM':'estimated gems per claim tap; used by statistics',
   'FREEBIES_LOG_LEVEL':'general worker logs — FULL | TXT | UI',
   'FREEBIES_LOG_LEVEL_CLAIMED':'"Freebie Claimed +X Diamonds" line — FULL | TXT | UI',
   'FREEBIES_CLOSE_ROI':'x1,y1,x2,y2 search area for close_menu.png after claim',
@@ -128,9 +127,6 @@ const FIELD_UNITS={
   /* adb */
   'ADB_CONNECT_TIMEOUT':'s',
   /* timers */
-  'MAIN_LOOP_TICK':'s',
-  /* workflow intervals */
-  'wf1_interval':'s','wf2_interval':'s','wf3_interval':'s','wf4_interval':'s','wf5_interval':'s','wf6_interval':'s',
   /* scroll */
   'SCROLL_DURATION_SLOW_MS':'ms','SCROLL_DURATION_MID_MS':'ms','SCROLL_DURATION_FAST_MS':'ms',
   'SCROLL_DISTANCE_SLOW_PX':'px','SCROLL_DISTANCE_MID_PX':'px','SCROLL_DISTANCE_FAST_PX':'px',
@@ -169,7 +165,7 @@ const SECTION_NOTES={
   'founders':'<b>FOUNDERS BUNDLE</b>: detects Founders lootboxes and taps each once. Immediately rechecks a fresh screenshot after every successful tap, up to MAX_CLAIMS_PER_CYCLE taps (default 3). Remaining bundles or failed fresh captures use a short retry. Startup and each activation use FIRST (fast checks) until a bundle is detected, then SLOW. A regular scan without a bundle returns to FIRST until the next detection. Immediate fresh rechecks after taps do not reset SLOW. Defaults: FIRST 180 s, SLOW 3000 s (50 minutes). Independent switch; shares the action lock with other features. Auto-start is configured under Startup Defaults. Only enable if you own the Founders Bundle. Settings require a bot restart.',
   'lootbug':'<b>Auto-Lootbug</b>: every <b>CHECK_INTERVAL</b>s with random +/- <b>INTERVAL_VARIANCE_PCT</b>% (default 15%), scan <b>DETECT_ROI</b> for the Lootbug. The status countdown shows the actual scheduled next check. If found, tap it (jitter), wait, then search for <code>images/Lootbug/lootbug_buy_bonus.png</code> in <b>BONUS_BUY_ROI</b> and tap the detected buy box. After BUY_RETRY seconds, verify with a fresh screenshot; retry if the box remains visible. Count once only after a fresh post-tap frame no longer matches Buy (the reward itself is not measured). Existing Buy dialogs are resumed on later scans. Postponed if another feature is currently performing ingame actions. If the buy box is hidden by notifications, wait <b>BUY_RETRY</b>s and retry with a fresh screenshot up to BUY_MAX_ATTEMPTS (default 5). Then give up this cycle and release the action lock. An enabled Founders check due within FOUNDERS_LOOKAHEAD seconds (default 5) has priority; Lootbug waits without the lock and aborts an ongoing Buy search early if necessary. The popup is never closed automatically. The action lock stays held only during the bounded Buy search.<br><b>Gem-Bonus selection</b>: disable Auto-Lootbug, wait for a Lootbug popup, select the bonuses you want in-game, then click <b>Buy</b>. The game remembers your selection. Enable Auto-Lootbug again afterwards.<br><b>Required in-game setting</b>: enable <b>Remove lootbug gem confirmation</b> so buying requires only one click.',
   'workflows':'<b>Workflows</b>: user-defined step sequences (taps, swipes, template clicks). Edit them in the <b>Workflows</b> tab above. Master "Auto WF" toggle pauses all scheduling and blocks manual triggers. Per-WF intervals get a global variance (set here) plus optional per-WF override.',
-  'detect_level':'<b>Detect Level</b>: periodically scans <b>ROI</b> for digit templates in <code>images/level/</code> (digit_0_tpl.png … digit_9_tpl.png), composes 1-3 digits left-to-right into the current level (1-999). Consumed by workflow if-conditions <b>level_eq / level_gte / level_lte</b>. Disable here to grey out those conditions in the editor.',
+  'detect_level':'<b>Detect Level</b>: periodically scans <b>ROI</b> for digit templates in <code>images/level/</code> (digit_0_tpl.png … digit_9_tpl.png), composes 1-3 digits left-to-right into the current level (1-999). Consumed by workflow if-conditions <b>level_eq / level_gte / level_lte</b>. Enable or disable it under Startup Defaults; save and restart to apply.',
 };
 
 function loadSettings(){fetch('/api/config/settings').then(r=>r.json()).then(data=>{settingsData=data;renderSettings(data)}).catch(()=>{})}
@@ -189,12 +185,12 @@ function renderSettings(data){
       const unit=FIELD_UNITS[key]||'';
 
       if(typeof val==='boolean'){
-        h+=`<div class="cfg-row"><span class="cfg-key" title="${key}">${key}</span><input class="cfg-val bool" id="${id}" type="text" value="${val}" readonly onclick="toggleBool(this)" data-section="${section}" data-key="${key}"><span class="cfg-unit"></span></div>`;
+        h+=`<div class="cfg-row"><span class="cfg-key" title="${key}">${key}</span><input class="cfg-val bool" id="${id}" type="text" value="${esc(val)}" readonly onclick="toggleBool(this)" data-section="${section}" data-key="${key}"><span class="cfg-unit"></span></div>`;
       }else if(Array.isArray(val)){
-        h+=`<div class="cfg-row"><span class="cfg-key" title="${key}">${key}</span><input class="cfg-val" id="${id}" type="text" value="${val.join(', ')}" data-section="${section}" data-key="${key}" data-ftype="array"><span class="cfg-unit"></span></div>`;
+        h+=`<div class="cfg-row"><span class="cfg-key" title="${key}">${key}</span><input class="cfg-val" id="${id}" type="text" value="${esc(val.join(', '))}" data-section="${section}" data-key="${key}" data-ftype="array"><span class="cfg-unit"></span></div>`;
       }else{
         const hint=FIELD_HINTS[key]||'';
-        h+=`<div class="cfg-row"><span class="cfg-key" title="${hint||key}">${key}${hint?' <span style="color:var(--text-dim);font-size:.55rem">('+hint+')</span>':''}</span><input class="cfg-val" id="${id}" type="text" value="${val}" data-section="${section}" data-key="${key}"><span class="cfg-unit">${unit}</span></div>`;
+        h+=`<div class="cfg-row"><span class="cfg-key" title="${hint||key}">${key}${hint?' <span style="color:var(--text-dim);font-size:.55rem">('+hint+')</span>':''}</span><input class="cfg-val" id="${id}" type="text" value="${esc(val)}" data-section="${section}" data-key="${key}"><span class="cfg-unit">${unit}</span></div>`;
       }
     }
     h+='</div></div>';

@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from flask import Flask
 from config import json_store
-from config.user_overrides import normalize_user_settings, load_user_settings
+from config.user_overrides import normalize_user_settings, load_user_settings, apply_overrides_to_settings
 from config.validation import validate_workflows
 import test_founders as helpers
 
@@ -17,6 +17,23 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 class SettingsValidationTests(unittest.TestCase):
+    def test_visibility_overrides_and_legacy_level_switch_have_one_canonical_value(self):
+        payload = {"startup_defaults": {"gem_statistics_enabled": False,
+                   "screenshot_visible": False, "detect_level_enabled": False},
+                   "detect_level": {"DETECT_LEVEL_ENABLED": True}}
+        result = normalize_user_settings(payload)
+        self.assertNotIn("DETECT_LEVEL_ENABLED", result["detect_level"])
+        self.assertTrue(result["startup_defaults"]["detect_level_enabled"])
+        self.assertEqual(normalize_user_settings(result), result)
+        settings = {}
+        apply_overrides_to_settings(settings, result)
+        self.assertFalse(settings["GEM_STATISTICS_ENABLED_DEFAULT"])
+        self.assertFalse(settings["SCREENSHOT_VISIBLE_DEFAULT"])
+        self.assertTrue(settings["DETECT_LEVEL_ENABLED"])
+        result["startup_defaults"]["detect_level_enabled"] = False
+        apply_overrides_to_settings(settings, result)
+        self.assertFalse(settings["DETECT_LEVEL_ENABLED"])
+
     def test_rejects_invalid_shapes_types_and_ranges(self):
         invalid = [None, [], {"adb": []}, {"unknown": {}},
             {"adb": {"ADB_AUTO_CONNECT": "false"}}, {"adb": {"ADB_MAX_RETRIES": 0}},

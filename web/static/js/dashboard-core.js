@@ -68,7 +68,7 @@ function toggleCard(id) {
   // sync collapsed class on card element (used by log-filter hide)
   const card = document.getElementById('card-'+id);
   if(card) card.classList.toggle('log-collapsed', collapsed);
-  /* ── Sidebar-Breite animiert anpassen wenn Configuration auf/zu ── */
+  /* Adjust sidebar width when Configuration opens or closes. */
   if(id==='config'){
     var grid=document.querySelector('.grid-main');
     if(grid) grid.classList.toggle('config-open',!collapsed);
@@ -83,7 +83,7 @@ document.addEventListener('DOMContentLoaded', function(){
     var ib=document.getElementById('gs-info-btn');if(ib)ib.style.display='none';
     var vt=document.getElementById('gs-vis-toggles');if(vt)vt.style.display='none';
   }
-  /* Sidebar-Breite: wenn Config beim Laden offen ist, sofort breit */
+  /* Restore the wider sidebar when Configuration starts open. */
   var grid=document.querySelector('.grid-main');
   if(grid && !cardStates['config']) grid.classList.add('config-open');
   socket.connect();
@@ -107,7 +107,6 @@ socket.on('bot_state', (data) => {
 });
 
 /* ============ TABS ============ */
-let ppLoaded=false;
 function switchTab(tab,btnEl){
   /* ── Mobile scroll-anchor: keep card header pinned ── */
   const cardHdr = document.querySelector('#card-config .card-hdr');
@@ -117,7 +116,6 @@ function switchTab(tab,btnEl){
   document.querySelectorAll('.tab-content').forEach(c=>c.classList.remove('active'));
   document.getElementById('tab-'+tab).classList.add('active');
   if(btnEl) btnEl.classList.add('active');
-  /* no perkpilot tab in Obelisk bot */
 
   /* ── After DOM reflow: restore scroll so card header stays put ── */
   if(cardHdr && hdrTop !== null){
@@ -131,8 +129,9 @@ function switchTab(tab,btnEl){
 
 /* ============ HELPERS ============ */
 function fmtSec(s){s=Math.max(0,Math.round(s));const m=Math.floor(s/60);const sec=s%60;return`${m}m${String(sec).padStart(2,'0')}s`}
-function fmtEta(ts){if(!ts)return'--';const diff=Math.max(0,Math.round(ts-Date.now()/1000));if(diff<=0)return'now';const m=Math.floor(diff/60);const s=diff%60;return m>0?`${m}:${String(s).padStart(2,'0')}`:`${s}s`}
-function esc(s){if(!s)return'';const d=document.createElement('div');d.textContent=String(s);return d.innerHTML}
+function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+// HTML encoding alone cannot protect a JavaScript string inside an event attribute.
+function jsArg(value){return esc(JSON.stringify(String(value)))}
 
 /* ============ RESTART ============ */
 function restartBot(){

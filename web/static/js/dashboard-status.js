@@ -209,8 +209,8 @@ function updateWorkflows(d) {
     html+=`<div class="${rowCls}">
       <div class="wf-info"><div class="wf-name">${esc(wf.name)}</div>${wf.description?`<div class="wf-desc">${esc(wf.description)}</div>`:''}</div>
       <div class="wf-eta-box"><div class="wf-eta">${eta}</div><div class="wf-eta-sub">${wf.step_count} step(s) \u00B7 ${Math.round(wf.interval_s)}s</div></div>
-      <button class="btn warn" style="padding:4px 10px;font-size:.68rem" onclick="cmd('wf_run:${esc(wf.slug)}')" ${dis} title="Run once">&#x25B6;</button>
-      <button class="btn ${on?'on':'off'}" style="padding:4px 8px;font-size:.62rem;min-width:38px" onclick="cmd('wf_auto:${esc(wf.slug)}')" ${dis}>Auto</button>
+      <button class="btn warn" style="padding:4px 10px;font-size:.68rem" onclick="cmd(${jsArg('wf_run:'+wf.slug)})" ${dis} title="Run once">&#x25B6;</button>
+      <button class="btn ${on?'on':'off'}" style="padding:4px 8px;font-size:.62rem;min-width:38px" onclick="cmd(${jsArg('wf_auto:'+wf.slug)})" ${dis}>Auto</button>
     </div>`;
   }
   if(!html){

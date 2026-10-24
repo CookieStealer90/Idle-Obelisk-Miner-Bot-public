@@ -5,7 +5,7 @@ No configuration here! Everything lives in config/settings.py.
 This file:
   - Propagates SUPPRESS_EXCEPTIONS via runtime_flags
   - Connects ADB
-  - Contains the main loop (empty - no features yet)
+  - Starts feature workers and dispatches dashboard commands
 """
 
 import time
@@ -13,18 +13,17 @@ import time
 import config.runtime_flags as runtime_flags
 import config.app_state as state
 from config.settings import (
-    BASE_DIR, ADB,
+    ADB,
     SUPPRESS_EXCEPTIONS, MAIN_LOOP_TICK,
 )
 
 import config.config_workflows as cfg
-from core.adb_helper import adb, ensure_connected, get_active_device
+from core.adb_helper import ensure_connected, get_active_device
 from core.file_logger import file_log, log_exception, bot_log
 
 
 # ========= Propagate SUPPRESS_EXCEPTIONS =========
 runtime_flags.SUPPRESS_EXCEPTIONS = SUPPRESS_EXCEPTIONS
-state.SUPPRESS_EXCEPTIONS = SUPPRESS_EXCEPTIONS
 
 # ========= Wire up config_workflows reference =========
 state.cfg = cfg
@@ -40,7 +39,7 @@ file_log(f"[STARTUP] SUPPRESS_EXCEPTIONS={SUPPRESS_EXCEPTIONS} | MAIN_LOOP_TICK=
 
 
 # ===========================================================
-# run() - Main loop (empty - features will be added later)
+# run() - Feature lifecycle, command dispatch and game watchdog
 # ===========================================================
 def run():
     """Start the bot main loop."""
@@ -57,6 +56,8 @@ def run():
     state.notices_enabled = bool(getattr(_settings_mod, "NOTICES_ENABLED", False))
     state.workflows_master_enabled = bool(getattr(_settings_mod, "WORKFLOWS_ENABLED_DEFAULT", False))
     state.detect_level_enabled = bool(getattr(_settings_mod, "DETECT_LEVEL_ENABLED", True))
+    state.gem_statistics_enabled = _settings_mod.GEM_STATISTICS_ENABLED_DEFAULT
+    state.screenshot_visible = _settings_mod.SCREENSHOT_VISIBLE_DEFAULT
 
     # Start features
     from features import freebies as freebies_feature

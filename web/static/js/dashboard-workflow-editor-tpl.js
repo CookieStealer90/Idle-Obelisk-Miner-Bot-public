@@ -11,16 +11,6 @@ function _tplBasename(p){
   const i = Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\'));
   return i>=0 ? p.slice(i+1) : p;
 }
-function _tplExpand(sel){
-  Array.from(sel.options).forEach(o=>{ if(o.dataset.full) o.textContent = o.dataset.full; });
-}
-function _tplCollapse(sel){
-  Array.from(sel.options).forEach(o=>{
-    if(!o.dataset.full) return;
-    o.textContent = o.selected ? _tplBasename(o.dataset.full) : o.dataset.full;
-  });
-}
-
 let _tplPickerBtn = null;
 let _tplPickerPopup = null;
 const _TPL_OPEN_KEY = 'wfe.tplOpenFolders';
