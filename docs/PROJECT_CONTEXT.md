@@ -218,7 +218,9 @@ disabled states, compact times and tooltip details without game access.
   `pystray`, `pillow`, `pywin32`. NumPy is used directly but is not listed
   separately; OpenCV supplies it as a dependency.
 - ADB runs through `subprocess`. The WebUI uses native JavaScript and a Socket.IO
-  client loaded from an external CDN.
+  4.7.5 client loaded from cdnjs over HTTPS with SHA-384 Subresource Integrity
+  and anonymous CORS. When updating the client, update the integrity hash to
+  match the exact CDN file. Dashboard loading still requires CDN access.
 - Development: `python main.py [port]`; default port 6001. Tray operation:
   `pythonw tray_runner.py`, also through `StartWebUI.bat` or `.vbs`.
   The server binds to `0.0.0.0` by default and is reachable on the LAN.
