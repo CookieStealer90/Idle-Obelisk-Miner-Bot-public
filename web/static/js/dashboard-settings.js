@@ -5,6 +5,20 @@
 let settingsData={};
 
 const FIELD_HINTS={
+  'NOTICES_ENABLED':'auto-start Notices on bot launch; saved images remain available while off',
+  'NOTICES_CHECK_INTERVAL_S':'regular interval in seconds; 2700 = 45 minutes; activation checks immediately',
+  'NOTICES_INTERVAL_VARIANCE_PCT':'random +/- interval variation, 0-100%; 0 uses a fixed interval',
+  'NOTICES_SCREEN_REUSE_AGE_S':'maximum game_scr cache age in seconds; follow-ups always capture fresh',
+  'NOTICES_TEMPLATE_GLOB':'image-relative frame glob; each frame requires a matching _mask.png',
+  'NOTICES_MATCH_THRESHOLD':'minimum score for every masked frame strip, 0-1; higher is stricter',
+  'NOTICES_TAP_X':'single dismiss tap X coordinate in screen pixels',
+  'NOTICES_TAP_Y':'single dismiss tap Y coordinate in screen pixels',
+  'NOTICES_TAP_JITTER_PX':'maximum +/- position jitter; must fit inside the screen',
+  'NOTICES_POST_CLICK_DELAY_S':'brief animation settling time before the mandatory fresh recheck',
+  'NOTICES_RETRY_S':'short retry for busy lock, missing capture, errors or pending notices',
+  'NOTICES_MAX_PER_CYCLE':'maximum taps while holding the action lock, 1-100; then short retry',
+  'NOTICES_MAX_ARCHIVE_MB':'storage limit in MiB; stops saving and tapping when full; never deletes unread images',
+  'NOTICES_LOG_LEVEL':'FULL = file and WebUI; TXT = file; UI = WebUI only',
   'TAP_HUMANIZE_ENABLED':'vary default tap duration; explicit workflow holds stay exact',
   'TAP_HOLD_MS':'base press duration (0-2000); 0 uses a plain ADB tap without duration variation',
   'TAP_HOLD_VARIANCE_PCT':'bounded +/- duration variation (0-100); values near the base are more frequent',
@@ -81,15 +95,15 @@ const FIELD_HINTS={
   'LOOTBUG_TAP_JITTER_PX':'random +/- pixel jitter on taps',
   'LOOTBUG_BUY_MAX_ATTEMPTS':'maximum Buy screenshot/tap attempts per cycle (1-100); then release the action lock without clicking Close',
   'LOOTBUG_FOUNDERS_LOOKAHEAD_S':'yield without the action lock when an enabled Founders check is due within this many seconds; 0 still yields for due checks',
-  'LOOTBUG_BUY_RETRY_S':'seconds between fresh screenshot retries while the buy box is obscured; never closes the popup',
-  'LOOTBUG_POST_CLICK_DELAY_S':'wait between lootbug-tap and buy-box scan',
+  'LOOTBUG_BUY_RETRY_S':'seconds between Buy retries and before fresh post-tap verification; never closes the popup',
+  'LOOTBUG_POST_CLICK_DELAY_S':'wait before the first Buy scan after a Lootbug tap or when resuming an open dialog (default 2 seconds)',
   'LOOTBUG_LOG_LEVEL':'general worker logs — FULL | TXT | UI',
   'LOOTBUG_LOG_LEVEL_DETECT':'template-match outcome logs — FULL | TXT | UI',
   'LOOTBUG_LOG_LEVEL_CLICK':'tap event logs — FULL | TXT | UI',
   'LOOTBUG_LOG_LEVEL_BUSY':'postponed-by-lock logs — FULL | TXT | UI',
   'LOOTBUG_BONUS_TAP_JITTER_PX':'random +/- pixel jitter on buy-box tap',
   'LOOTBUG_BONUS_BUY_TEMPLATE':'buy-box template path relative to images/',
-  'LOOTBUG_BONUS_BUY_ROI':'x1,y1,x2,y2 search area for the buy-box template; click the matched center once',
+  'LOOTBUG_BONUS_BUY_ROI':'x1,y1,x2,y2 search area for the buy-box template; tap the matched center and verify disappearance',
   'LOOTBUG_LOG_LEVEL_BONUS':'bonus-purchase events — FULL | TXT | UI',
   /* scroll */
   'SCROLL_DEFAULT_AREA':'x1, y1, x2, y2 rectangle for scrolls with no area given',
@@ -143,6 +157,7 @@ const FIELD_UNITS={
 
 /* Descriptions shown below certain sections */
 const SECTION_NOTES={
+  'notices':'Saves notices before a single dismiss tap. Uses a fresh-enough game cache first; follow-up checks always capture a new image. Supports multiple masked frame variants; text and icons are ignored. Search ROI defaults to 0,740,390,925 to cover both known frame sizes. Templates use a matching _mask.png. Images persist in temp/notices until acknowledged. An unchanged image is never blindly tapped twice. Test detection uses active settings and the cache, capturing a new screenshot if the cache is missing or stale, without clicking. Save and restart to apply settings.',
   'tapping':'<b>Humanized Taps</b>: varies the default press duration, keeping most values near the base. Default: 100 ms with +/-30% (70-130 ms). Explicit workflow hold durations stay exact; existing feature-specific position jitter takes precedence over the global default. The switch controls duration variation only. Save and restart the bot to apply. This does not guarantee undetectable automation.',
   'screenshot_capture':'All features capture full-device PNGs using separate Android files per slot and attempt. Only validated complete images replace the local cache. Failed fresh captures return no image, never an old fallback. Logs include request/capture IDs, slot, device, attempt, phase and elapsed time. Settings require a process restart.',
   'screenshot_viewer':'Shows the newest valid PNG from <code>./temp/</code> without taking a new screenshot. Plain slot filenames only, e.g. <code>game_scr.png, freebie_scr.png</code>. The viewer can display an older last successful image during capture failures.',
@@ -152,7 +167,7 @@ const SECTION_NOTES={
   'running_detection':'Detects if the game is foregrounded by matching <code>game_running.png</code> in ROI. Cached screenshots younger than <b>CACHE_AGE</b>s are reused — no extra ADB pull.',
   'freebies':'<b>Freebie-Gems</b>: startup and each activation use FIRST until the first available freebie icon is detected, then SLOW for all subsequent scans. Defaults: FIRST 300 s, SLOW 2700 s (45 minutes). Look in <b>DETECT_ROI</b>, open the menu, scroll through <b>CLAIM_ROI</b> and tap claim. Waits for the shared action lock. Settings require a bot restart.',
   'founders':'<b>FOUNDERS BUNDLE</b>: detects Founders lootboxes and taps each once. Immediately rechecks a fresh screenshot after every successful tap, up to MAX_CLAIMS_PER_CYCLE taps (default 3). Remaining bundles or failed fresh captures use a short retry. Startup and each activation use FIRST until the first bundle is detected, then SLOW for all subsequent scans. Defaults: FIRST 180 s, SLOW 3000 s (50 minutes). Independent switch; shares the action lock with other features. Auto-start is configured under Startup Defaults. Only enable if you own the Founders Bundle. Settings require a bot restart.',
-  'lootbug':'<b>Auto-Lootbug</b>: every <b>CHECK_INTERVAL</b>s with random +/- <b>INTERVAL_VARIANCE_PCT</b>% (default 15%), scan <b>DETECT_ROI</b> for the Lootbug. The status countdown shows the actual scheduled next check. If found, tap it (jitter), wait, then search for <code>images/Lootbug/lootbug_buy_bonus.png</code> in <b>BONUS_BUY_ROI</b> and click the detected buy box once. Postponed if another feature is currently performing ingame actions. If the buy box is hidden by notifications, wait <b>BUY_RETRY</b>s and retry with a fresh screenshot up to BUY_MAX_ATTEMPTS (default 5). Then give up this cycle and release the action lock. An enabled Founders check due within FOUNDERS_LOOKAHEAD seconds (default 5) has priority; Lootbug waits without the lock and aborts an ongoing Buy search early if necessary. The popup is never closed automatically. The action lock stays held only during the bounded Buy search.<br><b>Gem-Bonus selection</b>: disable Auto-Lootbug, wait for a Lootbug popup, select the bonuses you want in-game, then click <b>Buy</b>. The game remembers your selection. Enable Auto-Lootbug again afterwards.<br><b>Required in-game setting</b>: enable <b>Remove lootbug gem confirmation</b> so buying requires only one click.',
+  'lootbug':'<b>Auto-Lootbug</b>: every <b>CHECK_INTERVAL</b>s with random +/- <b>INTERVAL_VARIANCE_PCT</b>% (default 15%), scan <b>DETECT_ROI</b> for the Lootbug. The status countdown shows the actual scheduled next check. If found, tap it (jitter), wait, then search for <code>images/Lootbug/lootbug_buy_bonus.png</code> in <b>BONUS_BUY_ROI</b> and tap the detected buy box. After BUY_RETRY seconds, verify with a fresh screenshot; retry if the box remains visible. Count once only after a fresh post-tap frame no longer matches Buy (the reward itself is not measured). Existing Buy dialogs are resumed on later scans. Postponed if another feature is currently performing ingame actions. If the buy box is hidden by notifications, wait <b>BUY_RETRY</b>s and retry with a fresh screenshot up to BUY_MAX_ATTEMPTS (default 5). Then give up this cycle and release the action lock. An enabled Founders check due within FOUNDERS_LOOKAHEAD seconds (default 5) has priority; Lootbug waits without the lock and aborts an ongoing Buy search early if necessary. The popup is never closed automatically. The action lock stays held only during the bounded Buy search.<br><b>Gem-Bonus selection</b>: disable Auto-Lootbug, wait for a Lootbug popup, select the bonuses you want in-game, then click <b>Buy</b>. The game remembers your selection. Enable Auto-Lootbug again afterwards.<br><b>Required in-game setting</b>: enable <b>Remove lootbug gem confirmation</b> so buying requires only one click.',
   'workflows':'<b>Workflows</b>: user-defined step sequences (taps, swipes, template clicks). Edit them in the <b>Workflows</b> tab above. Master "Auto WF" toggle pauses all scheduling and blocks manual triggers. Per-WF intervals get a global variance (set here) plus optional per-WF override.',
   'detect_level':'<b>Detect Level</b>: periodically scans <b>ROI</b> for digit templates in <code>images/level/</code> (digit_0_tpl.png … digit_9_tpl.png), composes 1-3 digits left-to-right into the current level (1-999). Consumed by workflow if-conditions <b>level_eq / level_gte / level_lte</b>. Disable here to grey out those conditions in the editor.',
 };
@@ -164,7 +179,7 @@ function renderSettings(data){
   let h='';
   for(const[section,vals]of Object.entries(data)){
     if(typeof vals!=='object'||vals===null)continue;
-    const sectionLabel = section==='tapping' ? 'Humanized Taps' : section==='founders' ? 'FOUNDERS BUNDLE' : section==='startup_defaults' ? 'Startup Defaults' : section;
+    const sectionLabel = section==='tapping' ? 'Humanized Taps' : section==='founders' ? 'FOUNDERS BUNDLE' : section==='notices' ? 'Notices' : section==='startup_defaults' ? 'Startup Defaults' : section;
     h+=`<div class="cfg-section"><div class="cfg-section-title" onclick="toggleCfgSection(this)">${sectionLabel}</div><div class="cfg-fields">`;
     if(SECTION_NOTES[section]){
       h+=`<div style="font-size:.58rem;color:var(--text-dim);padding:4px 0 6px;line-height:1.4">${SECTION_NOTES[section]}</div>`;

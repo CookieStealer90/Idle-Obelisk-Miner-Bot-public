@@ -122,7 +122,7 @@ SETTINGS = {
     "adb": {"DEVICE": text, "ADB_AUTO_CONNECT": boolean, "ADB_CONNECT_TIMEOUT": POS,
             "ADB_MAX_RETRIES": number(1, integer=True), "ADB_SCAN_PORTS": ports},
     "startup_defaults": {key: boolean for key in (
-        "FOUNDERS_ENABLED", "freebies_enabled", "lootbug_enabled", "workflows_enabled",
+        "FOUNDERS_ENABLED", "NOTICES_ENABLED", "freebies_enabled", "lootbug_enabled", "workflows_enabled",
         "detect_level_enabled", "gem_statistics_enabled", "screenshot_visible")},
     "running_detection": {"RUNNING_ROI": roi, "RUNNING_MATCH_THRESHOLD": UNIT,
                           "RUNNING_CHECK_CACHE_AGE_S": N, "RUNNING_LOG_LEVEL": LOG},
@@ -143,6 +143,12 @@ SETTINGS = {
         roi="FOUNDERS_DETECT_ROI", relative_path="FOUNDERS_TEMPLATE", UNIT="FOUNDERS_MATCH_THRESHOLD",
         LOG="FOUNDERS_LOG_LEVEL FOUNDERS_LOG_LEVEL_CLICK FOUNDERS_LOG_LEVEL_BUSY")
         | {"FOUNDERS_MAX_CLAIMS_PER_CYCLE": number(1, 100, integer=True)},
+    "notices": _schema(POS="NOTICES_CHECK_INTERVAL_S NOTICES_RETRY_S",
+        PERCENT="NOTICES_INTERVAL_VARIANCE_PCT", N="NOTICES_SCREEN_REUSE_AGE_S NOTICES_POST_CLICK_DELAY_S",
+        roi="NOTICES_DETECT_ROI", relative_path="NOTICES_TEMPLATE_GLOB",
+        UNIT="NOTICES_MATCH_THRESHOLD", I="NOTICES_TAP_X NOTICES_TAP_Y NOTICES_TAP_JITTER_PX",
+        LOG="NOTICES_LOG_LEVEL") | {"NOTICES_MAX_PER_CYCLE": number(1, 100, integer=True),
+                                   "NOTICES_MAX_ARCHIVE_MB": number(1, 10000)},
     "detect_level": _schema(boolean="DETECT_LEVEL_ENABLED", roi="DETECT_LEVEL_ROI",
         POS="DETECT_LEVEL_INTERVAL_S", UNIT="DETECT_LEVEL_THRESHOLD",
         N="DETECT_LEVEL_CACHE_MAX_AGE_S", I="DETECT_LEVEL_NMS_MIN_DX_PX", LOG="DETECT_LEVEL_LOG_LEVEL"),

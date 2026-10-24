@@ -180,6 +180,31 @@ class CaptureTests(unittest.TestCase):
         self.adb.assert_not_called()
         self.assertIn("slot=broken phase=cache_read failed", self.messages())
 
+    def test_small_future_mtime_remains_readable_by_cache_and_viewer(self):
+        path = self.write_cache("game_scr")
+        now = 1700000000.0
+        for lead in (0.000001, 0.005, 0.04):
+            with self.subTest(lead=lead):
+                os.utime(path, (now + lead, now + lead))
+                with patch.object(self.cache, "time", types.SimpleNamespace(time=lambda: now)):
+                    result = self.cache.get_latest_cached_screen(["game_scr"], max_age=5)
+                    self.assertIsNotNone(result[0])
+                    self.assertEqual(result[3:], ("game_scr", 0.0))
+                    self.assertEqual(self.cache.latest_cached_png(["game_scr.png"]),
+                                     (self.payload, "game_scr.png"))
+        self.adb.assert_not_called()
+
+    def test_timestamp_tolerance_does_not_accept_far_future_or_expired_frames(self):
+        path = self.write_cache("game_scr")
+        now = 1700000000.0
+        for offset, max_age in ((0.25, 5), (-5, 5), (-5.01, 5), (0.005, 0)):
+            with self.subTest(offset=offset, max_age=max_age):
+                os.utime(path, (now + offset, now + offset))
+                with patch.object(self.cache, "time", types.SimpleNamespace(time=lambda: now)):
+                    self.assertEqual(self.cache.get_cached_screen("game_scr", max_age),
+                                     (None, 0, 0))
+        self.adb.assert_not_called()
+
     def test_cleanup_failure_does_not_repeat_or_invalidate_success(self):
         self.cleanup_hook = lambda *args: (_ for _ in ()).throw(RuntimeError("cleanup unavailable"))
         self.assertIsNotNone(self.cache.get_screen("founders_scr", force=True)[0])
@@ -280,9 +305,11 @@ class CaptureTests(unittest.TestCase):
         self.assertIn("slot=game_scr cache_hit age=", self.messages())
 
     def test_legacy_helper_uses_same_atomic_pipeline(self):
-        with patch.dict(sys.modules, {"core.screen_cache": self.cache}), \
+        with patch.dict(sys.modules, {"core.screen_cache": self.cache,
+                                      "config.settings": self.settings}), \
              patch.object(config, "settings", self.settings, create=True):
             legacy = load("legacy_screenshot_under_test", "core/screenshot.py")
+        self.assertIs(legacy.s, self.settings)
         self.assertIsNotNone(legacy.screenshot_gray()[0])
         self.assertTrue(Path(self.settings.LOCAL_SCREEN).is_file())
         self.assertIn("__obelisk_manual_scr_", self.adb.call_args_list[0].args[3])

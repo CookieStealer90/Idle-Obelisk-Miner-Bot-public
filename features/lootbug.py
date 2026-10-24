@@ -13,7 +13,7 @@ Flow:
     5. Match LOOTBUG_TEMPLATE inside LOOTBUG_DETECT_ROI. No hit -> done.
     6. Tap the matched lootbug (jitter), wait LOOTBUG_POST_CLICK_DELAY_S,
        then find lootbug_buy_bonus.png inside LOOTBUG_BONUS_BUY_ROI and
-       click it once. Retry with fresh screenshots up to BUY_MAX_ATTEMPTS,
+       verify dismissal after each tap. Retry up to BUY_MAX_ATTEMPTS,
        yielding early when Founders is due. Never click Close.
 
 The worker runs in its own daemon thread, gated by `state.lootbug_enabled`
@@ -127,6 +127,7 @@ def _buy_when_visible(thr: float) -> bool:
     """Bound Buy retries while retaining the caller's action lock."""
     limit = int(getattr(s, "LOOTBUG_BUY_MAX_ATTEMPTS", 5))
     for attempt in range(1, limit + 1):
+        waited_after_tap = False
         if not state.lootbug_enabled or _stop_evt.is_set():
             return False
         if _founders_due():
@@ -141,15 +142,35 @@ def _buy_when_visible(thr: float) -> bool:
             if bm["found"]:
                 jitter = int(s.LOOTBUG_BONUS_TAP_JITTER_PX)
                 _log(f"[LOOTBUG] buy box detected (score={bm['score']:.3f}) "
-                     f"-> single tap near target center ({bm['cx']},{bm['cy']}); "
+                     f"-> tap near target center ({bm['cx']},{bm['cy']}); "
                      f"position jitter +/-{jitter}px per axis applied by tapper",
                      "LOOTBUG_LOG_LEVEL_BONUS")
                 if not state.lootbug_enabled or _stop_evt.is_set():
                     return False
                 if tap(bm["cx"], bm["cy"], jitter=jitter):
-                    state.lootbug_bonus_count = getattr(state, "lootbug_bonus_count", 0) + 1
-                    return True
-                _log("[LOOTBUG] buy tap failed -> retrying", "LOOTBUG_LOG_LEVEL_BONUS")
+                    # ADB success does not mean the game accepted the purchase.
+                    delay = max(0.1, float(s.LOOTBUG_BUY_RETRY_S))
+                    state.lootbug_next_check_ts = time.time() + delay
+                    _sleep_interruptible(delay)
+                    waited_after_tap = True
+                    if not state.lootbug_enabled or _stop_evt.is_set():
+                        return False
+                    check_img = _fresh_own_screen()
+                    if check_img is not None:
+                        check = find_template(check_img, s.LOOTBUG_BONUS_BUY_TEMPLATE,
+                                              roi=tuple(s.LOOTBUG_BONUS_BUY_ROI), threshold=thr)
+                        if not check["found"]:
+                            state.lootbug_bonus_count = getattr(state, "lootbug_bonus_count", 0) + 1
+                            _log("[LOOTBUG] Buy box absent after tap; reward not independently verified",
+                                 "LOOTBUG_LOG_LEVEL_BONUS")
+                            return True
+                        _log("[LOOTBUG] Buy box still visible after tap -> retrying",
+                             "LOOTBUG_LOG_LEVEL_BONUS")
+                    else:
+                        _log("[LOOTBUG] no verification screenshot -> retrying without counting",
+                             "LOOTBUG_LOG_LEVEL_BONUS")
+                else:
+                    _log("[LOOTBUG] buy tap failed -> retrying", "LOOTBUG_LOG_LEVEL_BONUS")
             else:
                 _log(f"[LOOTBUG] buy box obscured/not found (score={bm['score']:.3f}) -> retrying",
                      "LOOTBUG_LOG_LEVEL_BONUS")
@@ -160,15 +181,16 @@ def _buy_when_visible(thr: float) -> bool:
                  "giving up this cycle and releasing action lock (no Close tap)",
                  "LOOTBUG_LOG_LEVEL_BONUS")
             return False
-        delay = max(0.1, float(s.LOOTBUG_BUY_RETRY_S))
-        state.lootbug_next_check_ts = time.time() + delay
-        _sleep_interruptible(delay)
+        if not waited_after_tap:
+            delay = max(0.1, float(s.LOOTBUG_BUY_RETRY_S))
+            state.lootbug_next_check_ts = time.time() + delay
+            _sleep_interruptible(delay)
     return False
 
 
 def _run_scan_cycle() -> bool:
-    """Detect and click Lootbug, then wait for and click its buy box.
-    Returns True if anything was clicked."""
+    """Open a Lootbug or resume an existing Buy dialog and verify Buy taps.
+    Return True for a Lootbug tap or observed Buy dismissal."""
     img = _get_screen_for_scan()
     if img is None:
         _log("[LOOTBUG] no screenshot -> skipping cycle")
@@ -181,6 +203,15 @@ def _run_scan_cycle() -> bool:
     lootbug_clicked = False
     m = _find_any_template(img, roi, thr)
     if not m["found"]:
+        # Recover an open dialog, including one left behind by a Founders yield.
+        # This cached match is only a hint; Buy always uses a fresh capture.
+        buy = find_template(img, s.LOOTBUG_BONUS_BUY_TEMPLATE,
+                            roi=tuple(s.LOOTBUG_BONUS_BUY_ROI), threshold=thr)
+        if buy["found"]:
+            _log("[LOOTBUG] existing Buy box detected -> resuming bounded Buy search",
+                 "LOOTBUG_LOG_LEVEL_BONUS")
+            _sleep_interruptible(float(s.LOOTBUG_POST_CLICK_DELAY_S))
+            return _buy_when_visible(thr)
         _log(f"[LOOTBUG] no lootbug present (best_score={m['score']:.3f} thr={thr} tpl={m.get('template')})",
              "LOOTBUG_LOG_LEVEL_DETECT")
     else:

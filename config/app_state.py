@@ -69,4 +69,12 @@ founders_next_check_ts = 0.0
 founders_followup_pending = False    # unresolved bundle or failed fresh follow-up needs a short retry
 
 # ========= Suppress Exceptions =========
+notices_enabled = False
+notices_clicked_count = 0
+notices_next_check_ts = 0.0
+notices_last_scan_ts = 0.0
+notices_status = "Idle"
+notices_error = ""
+notices_last_score = 0.0
+
 SUPPRESS_EXCEPTIONS = True

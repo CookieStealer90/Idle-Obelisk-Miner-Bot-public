@@ -240,6 +240,10 @@ def apply_overrides_to_settings(settings_globals: dict, overrides: dict):
             settings_globals[key] = value
 
     sd = overrides.get("startup_defaults", {})
+    for key, value in overrides.get("notices", {}).items():
+        settings_globals[key] = tuple(int(c) for c in value) if key == "NOTICES_DETECT_ROI" else value
+    if "NOTICES_ENABLED" in sd:
+        settings_globals["NOTICES_ENABLED"] = sd["NOTICES_ENABLED"]
     if "FOUNDERS_ENABLED" in sd:
         settings_globals["FOUNDERS_ENABLED"] = bool(sd["FOUNDERS_ENABLED"])
     if "freebies_enabled" in sd:

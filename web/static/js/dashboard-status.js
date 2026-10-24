@@ -24,6 +24,58 @@ function _ttb_syncTabTitleAfterWebUI(isRunning){
 }
 
 
+// Countdown nodes are created once; state updates only change text and transform.
+const scanSchedules = new Map();
+function updateScanCountdown(id, data, options={}) {
+  const target=document.getElementById(id);
+  if(!target)return;
+  // Cached templates may still wrap this ID in a span beside last-scan text.
+  // Own the whole footer so the legacy text cannot create another line.
+  const host=target.closest?.('.stat-sub')||target;
+  if(host!==target){
+    target.removeAttribute('id');
+    host.id=id;
+  }
+  if(!host.querySelector('.scan-time')){
+    host.classList.add('scan-countdown');
+    host.innerHTML='<span class="scan-track" aria-hidden="true"><span class="scan-fill"></span></span><span class="scan-time"></span>';
+  }
+  const time=host.querySelector('.scan-time'), fill=host.querySelector('.scan-fill');
+  const remaining=Math.max(0, Number(data.next_check_remaining)||0);
+  const enabled=!!data.enabled && !options.blocked;
+  const deadline=Number(data.next_check_ts)||0;
+  let schedule=scanSchedules.get(id);
+  // Deadlines identify actual schedules, including jitter and short busy retries.
+  if(!enabled){
+    scanSchedules.delete(id);
+    schedule=null;
+  }else if(!schedule || schedule.deadline!==deadline || remaining>schedule.previous+1){
+    schedule={deadline, total:Math.max(1,remaining), previous:remaining};
+    scanSchedules.set(id,schedule);
+  }
+  if(schedule)schedule.previous=remaining;
+  const seconds=Math.ceil(remaining);
+  const hours=Math.floor(seconds/3600), minutes=Math.floor(seconds/60)%60;
+  const label=!data.enabled?'Off':options.blocked||(!remaining?'Ready':
+    (hours?hours+':'+String(minutes).padStart(2,'0'):String(minutes))+':'+String(seconds%60).padStart(2,'0'));
+  const mode=!enabled?'off':remaining?'waiting':'ready';
+  if(time.textContent!==label)time.textContent=label;
+  if(host.dataset.mode!==mode)host.dataset.mode=mode;
+  const progress=!enabled?0:remaining?Math.max(0,Math.min(1,1-remaining/schedule.total)):1;
+  const transform='scaleX('+progress.toFixed(4)+')';
+  if(fill.style.transform!==transform)fill.style.transform=transform;
+  const detail=options.detail||'';
+  const title=(data.enabled?(options.blocked||('Next scan: '+label)):'Scanning disabled')+(detail?' \u00b7 '+detail:'');
+  if(host.title!==title){host.title=title;host.setAttribute('aria-label',title);}
+}
+
+const statusMarkup = new WeakMap();
+function setStatusMarkup(element, html){
+  if(statusMarkup.get(element)===html)return;
+  element.innerHTML=html;
+  statusMarkup.set(element,html);
+}
+
 function updateStatus(d) {
   const reloadEl = document.getElementById('workflow-reload-status');
   if(reloadEl){
@@ -47,26 +99,18 @@ function updateStatus(d) {
   const diamonds = fb.diamonds||0;
   document.getElementById('s-gem-val').title = 'Estimated gems from claim taps; reward not verified in game';
   /* Show total diamonds + claim count in parentheses, e.g. "28 💎 (1x)" */
-  document.getElementById('s-gem-val').innerHTML = claims>0
+  setStatusMarkup(document.getElementById('s-gem-val'), claims>0
     ? `${diamonds}<span class="ico">\u{1F48E}</span> <span style="font-size:.7em;color:var(--text-dim)">(${claims}x)</span>`
-    : `0<span class="ico">\u{1F48E}</span>`;
-  const nextEl = document.getElementById('s-gem-next');
-  if(!fb.enabled){
-    nextEl.innerHTML = `<span style="color:var(--text-dim)">off</span>`;
-  } else {
-    const rem = fb.next_check_remaining||0;
-    nextEl.innerHTML = rem>0
-      ? `<span style="color:var(--yellow)">next ${fmtSec(rem)}</span>`
-      : `<span style="color:var(--green)">Ready</span>`;
-  }
+    : `0<span class="ico">\u{1F48E}</span>`);
+  updateScanCountdown('s-gem-next',fb);
 
   /* Action lock indicator under Game tile (small, dim) */
   const al = d.action_lock||{};
   const alEl = document.getElementById('s-action-lock');
   if(alEl){
-    alEl.innerHTML = al.locked
+    setStatusMarkup(alEl, al.locked
       ? `<span style="color:var(--yellow)">action: busy</span>`
-      : `<span style="color:var(--text-dim)">action: idle</span>`;
+      : `<span style="color:var(--text-dim)">action: idle</span>`);
   }
 
   /* Level tile */
@@ -75,30 +119,25 @@ function updateStatus(d) {
   const lvlNext = document.getElementById('s-level-next');
   if(lvlVal && lvlNext){
     if(!dl.enabled){
-      lvlVal.innerHTML = `<span style="color:var(--text-dim)">disabled</span>`;
+      setStatusMarkup(lvlVal, `<span style="color:var(--text-dim)">disabled</span>`);
       lvlVal.className = 'stat-value';
-      lvlNext.innerHTML = `<span style="color:var(--text-dim)">off</span>`;
+      updateScanCountdown('s-level-next',dl);
     } else if(!dl.armed){
-      lvlVal.innerHTML = `<span style="color:var(--red)">&#x2014;</span>`;
+      setStatusMarkup(lvlVal, `<span style="color:var(--red)">&#x2014;</span>`);
       lvlVal.className = 'stat-value';
-      lvlNext.innerHTML = `<span style="color:var(--red)" title="Place digit_*_tpl.png into images/level/">no digit templates</span>`;
+      updateScanCountdown('s-level-next',dl,{blocked:'Setup',detail:'Place digit_*_tpl.png into images/level/'});
     } else if(dl.current==null){
-      lvlVal.innerHTML = `<span style="color:var(--text-dim)">&#x2014;</span>`;
+      setStatusMarkup(lvlVal, `<span style="color:var(--text-dim)">&#x2014;</span>`);
       lvlVal.className = 'stat-value';
-      const err = dl.last_error ? ` title="${esc(dl.last_error)}"` : '';
-      lvlNext.innerHTML = `<span style="color:var(--yellow)"${err}>unknown</span>`;
+      updateScanCountdown('s-level-next',dl,{detail:dl.last_error||'Level not detected yet'});
     } else {
       const age = (typeof dl.last_age === 'number') ? dl.last_age : null;
       const interval = 60;
       const stale = age!=null && age > interval*2;
       const color = stale ? 'var(--yellow)' : 'var(--green)';
-      lvlVal.innerHTML = `<span style="color:${color}">${dl.current}</span>`;
+      setStatusMarkup(lvlVal, `<span style="color:${color}">${dl.current}</span>`);
       lvlVal.className = 'stat-value';
-      const rem = dl.next_check_remaining||0;
-      const ageStr = age!=null ? `${fmtSec(age)} ago` : '';
-      lvlNext.innerHTML = rem>0
-        ? `<span style="color:var(--text-dim)">next ${fmtSec(rem)}${ageStr?' \u00B7 '+ageStr:''}</span>`
-        : `<span style="color:var(--green)">Ready</span>`;
+      updateScanCountdown('s-level-next',dl,{detail:dl.last_error||(age!=null?'Last detection: '+fmtSec(age)+' ago':'')});
     }
   }
 
@@ -109,16 +148,13 @@ function updateStatus(d) {
   if(lbVal && lbNext){
     const clicks = lb.clicked||0;
     if(!lb.enabled){
-      lbVal.innerHTML = `<span style="color:var(--red)">Off</span>`;
+      setStatusMarkup(lbVal, `<span style="color:var(--red)">Off</span>`);
       lbVal.className = 'stat-value';
-      lbNext.innerHTML = `<span style="color:var(--text-dim)">off</span>`;
+      updateScanCountdown('s-lootbug-next',lb);
     } else {
-      lbVal.innerHTML = `<span style="color:var(--green)">Active</span> <span style="font-size:.7em;color:var(--text-dim)">(${clicks}x)</span>`;
+      setStatusMarkup(lbVal, `<span style="color:var(--green)">Active</span> <span style="font-size:.7em;color:var(--text-dim)">(${clicks}x)</span>`);
       lbVal.className = 'stat-value';
-      const rem = lb.next_check_remaining||0;
-      lbNext.innerHTML = rem>0
-        ? `<span style="color:var(--yellow)">next ${fmtSec(rem)}</span>`
-        : `<span style="color:var(--green)">Ready</span>`;
+      updateScanCountdown('s-lootbug-next',lb);
     }
   }
 
@@ -127,17 +163,13 @@ function updateStatus(d) {
   const foundersVal = document.getElementById('s-founders-val');
   const foundersNext = document.getElementById('s-founders-next');
   if(foundersVal && foundersNext){
-    foundersVal.innerHTML = founders.enabled
+    setStatusMarkup(foundersVal, founders.enabled
       ? `<span style="color:var(--green)">Active</span> <span style="font-size:.7em;color:var(--text-dim)">(${founders.clicked||0}x)</span>`
-      : `<span style="color:var(--red)">Off</span>`;
-    const rem = founders.next_check_remaining||0;
-    foundersNext.innerHTML = !founders.enabled
-      ? `<span style="color:var(--text-dim)">off</span>`
-      : rem>0
-        ? `<span style="color:var(--yellow)">next ${fmtSec(rem)}</span>`
-        : `<span style="color:var(--green)">Ready</span>`;
+      : `<span style="color:var(--red)">Off</span>`);
+    updateScanCountdown('s-founders-next',founders);
   }
 }
+
 
 function updateButtons(d) {
   setBtn('btn-auto',d.workflows_master_enabled,'\u26D3\uFE0F Workflows');

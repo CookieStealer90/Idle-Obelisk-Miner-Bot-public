@@ -1,11 +1,14 @@
 # Screenshot Capture and Troubleshooting
 
-Updated: 2026-10-23.
+Updated: 2026-10-24.
 
 ## Capture Paths
 
 All captures are full emulator screenshots. ROIs are evaluated only during
 image recognition. There is no capture of an ROI crop alone.
+Notices archives color crops from full-device captures separately in
+`temp/notices/`; these are persistent inbox entries, not screenshot cache slots.
+See [Notices](NOTICES.md) before cleaning the temporary directory.
 
 | Usage | Local Slot |
 | --- | --- |
@@ -13,9 +16,11 @@ image recognition. There is no capture of an ROI crop alone.
 | Freebies, claim search and menu closing | `freebie_scr` |
 | Lootbug detection and Buy-box retries | `lootbug_scr` |
 | Founders | `founders_scr` |
+| Notices (fresh captures and mandatory post-tap checks) | `notices_scr` |
+| Notices manual detection test (cache-miss fallback) | `notices_test_scr` |
 | Level detection | `level_scr` |
 | Workflow templates, rotation, Rainbow and If conditions | `wf_scr` |
-| Compatibility helper `screenshot_gray()` | `manual_scr`; destination still set through `LOCAL_SCREEN` or an argument |
+| Compatibility helper `screenshot_gray()` | `manual_scr`; destination defaults to `temp/__scr.png` through `LOCAL_SCREEN`, or an explicit argument |
 
 The slot settings in the code remain authoritative. Each capture attempt creates
 `<directory>/__obelisk_<slot>_<uuid>.png` on Android. The directory is derived
@@ -50,6 +55,10 @@ implementation until it restarts.
 - `force=True` requires a successful new capture. Once attempts are exhausted,
   the result is `(None, 0, 0)`, never an old image.
 - `get_cached_screen()` reads only a fresh local slot.
+- File timestamps up to 50 ms ahead of Python's wall clock are treated as age
+  zero to accommodate Windows clock precision and timestamp rounding. Larger
+  future timestamps remain invalid. Expiry still uses `age >= max_age`, so a
+  zero maximum age never reuses a cached frame. The viewer uses the same check.
 - `get_latest_cached_screen()` reads the allowed slots in order of freshness,
   skipping missing, stale or damaged images. It never captures.
 - Lootbug and Founders initially read only `game_scr` from the cache. If it is
@@ -128,6 +137,10 @@ python -B -m unittest discover -s tests -v
 simulated ADB. Coverage includes cache age, damaged images, partial transfers,
 retries, atomic replacement, device changes, parallel slots, concurrent access
 to the same slot, dashboard snapshots, legacy helpers and failure diagnostics.
+Deterministic timestamp tests cover slight future offsets, normalized age,
+larger future timestamps, exact expiry and a zero maximum age. These reproduce
+the Windows/Python 3.10 failure where an immediately read, complete frame was
+discarded solely because its computed age was slightly negative.
 `tests/test_screenshot_consumers.py` checks Run Detection, its serialization,
 workflow color images, other consumers, configuration and HTTP delivery.
 The existing Founders/Lootbug tests continue to check feature flows.

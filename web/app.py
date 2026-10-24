@@ -21,6 +21,7 @@ from web.security import enforce_dashboard_access_policy, check_socketio_access,
 from web.secret_key import load_or_create_secret_key
 from web.state_builder import build_state_dict
 from web.config_api import config_bp
+from web.notices_api import notices_bp
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -34,6 +35,7 @@ app.config["SECRET_KEY"] = load_or_create_secret_key(BASE_DIR / "config" / "web_
 socketio = SocketIO(app, async_mode="threading", cors_allowed_origins=socketio_origin_allowed)
 
 app.register_blueprint(config_bp)
+app.register_blueprint(notices_bp)
 
 _bot_thread = None
 _bot_started = False

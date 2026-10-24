@@ -37,6 +37,7 @@
         <div class="stat"><div class="stat-label">Lootbug</div><div class="stat-value" id="s-lootbug-val">&#x2014;</div><div class="stat-sub" id="s-lootbug-next"></div></div>
         <div class="stat"><div class="stat-label">FOUNDERS BUNDLE</div><div class="stat-value" id="s-founders-val">&#x2014;</div><div class="stat-sub" id="s-founders-next"></div></div>
         <div class="stat" title="Detected in-game level (images/level/digit_*_tpl.png)"><div class="stat-label">Level</div><div class="stat-value" id="s-level-val">&#x2014;</div><div class="stat-sub" id="s-level-next"></div></div>
+        <div class="stat" title="Unacknowledged saved notices"><div class="stat-label">&#x1F4E5; NOTICES</div><div class="stat-value" id="s-notices-val">&#x2014;</div><div class="stat-sub" id="s-notices-next"></div></div>
       </div>
     </div>
   </div>
@@ -53,6 +54,7 @@
         <button class="btn" id="btn-freebies" onclick="cmd('freebies_toggle')" title="Auto-claim freebies">&#x1F381; Freebies</button>
         <button class="btn" id="btn-lootbug" onclick="cmd('lootbug_toggle')" title="Auto-click in-game Lootbug">&#x1F41B; Lootbug</button>
         <button class="btn" id="btn-founders" onclick="cmd('founders_toggle')" title="Auto-claim Founders Bundle lootboxes">&#x1F4E6; FOUNDERS BUNDLE</button>
+        <button class="btn" id="btn-notices" onclick="cmd('notices_toggle')" title="Save and dismiss game notices">&#x1F4E5; Notices</button>
         <div class="ctrl-spacer"></div>
         <button class="btn primary" onclick="cmd('reload_cfg')">&#x1F504; Reload</button>
       </div>
@@ -166,6 +168,23 @@
     <div style="font-size:.58rem;color:var(--text-dim);margin-top:6px">Shows newest matching .png from <code>./temp/</code> &mdash; configure in Settings &rarr; screenshot_viewer</div>
   </div>
 </div>
+<!-- NOTICES INBOX -->
+<div class="card" id="card-notices" style="padding:10px">
+  <div class="card-hdr" onclick="toggleCard('notices')">
+    <div class="card-title">&#x1F4E5; Notices <span id="notices-count" class="notice-count">0</span></div>
+    <span class="card-toggle" id="tog-notices">&#x2212;</span>
+  </div>
+  <div class="card-body" id="body-notices">
+    <div class="notice-toolbar"><span id="notices-status" role="status">Waiting for status</span><button class="btn" id="notices-test" type="button">Test detection</button></div>
+    <div id="notices-error" role="alert" hidden></div>
+    <div id="notices-test-result" role="status"></div>
+    <p class="notice-help">Saved before tapping. Images stay here until acknowledged.</p>
+    <div id="notices-list"></div>
+    <div id="notices-empty" class="scr-placeholder">No unread notices</div>
+    <button class="btn" id="notices-more" type="button" hidden>Show more</button>
+  </div>
+</div>
+<dialog id="notice-preview"><button class="btn" id="notice-preview-close" type="button">Close</button><img id="notice-preview-image" alt="Saved game notice"></dialog>
 </div><!-- /col-side -->
 
 </div><!-- /grid-main -->
@@ -183,6 +202,7 @@
 <script src="/static/js/dashboard-workflow-editor-dnd.js"></script>
 <script src="/static/js/dashboard-workflow-editor-mutations.js"></script>
 <script src="/static/js/dashboard-screenshot.js"></script>
+<script src="/static/js/dashboard-notices.js"></script>
 <script src="/static/js/dashboard-gem-stats.js"></script>
 </body>
 </html>

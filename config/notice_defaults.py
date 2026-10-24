@@ -1,0 +1,18 @@
+"""Editable Notices defaults, shared by settings and the configuration API."""
+
+NOTICE_DEFAULTS = {
+    "NOTICES_CHECK_INTERVAL_S": 2700.0,
+    "NOTICES_INTERVAL_VARIANCE_PCT": 15.0,
+    "NOTICES_SCREEN_REUSE_AGE_S": 5.0,
+    "NOTICES_DETECT_ROI": (0, 740, 390, 925),
+    "NOTICES_TEMPLATE_GLOB": "Notices/*_frame.png",
+    "NOTICES_MATCH_THRESHOLD": 0.96,
+    "NOTICES_TAP_X": 150,
+    "NOTICES_TAP_Y": 830,
+    "NOTICES_TAP_JITTER_PX": 4,
+    "NOTICES_POST_CLICK_DELAY_S": 0.35,
+    "NOTICES_RETRY_S": 10.0,
+    "NOTICES_MAX_PER_CYCLE": 10,
+    "NOTICES_MAX_ARCHIVE_MB": 100,
+    "NOTICES_LOG_LEVEL": "FULL",
+}

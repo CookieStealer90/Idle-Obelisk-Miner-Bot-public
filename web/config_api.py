@@ -51,6 +51,7 @@ def settings_get():
                 "freebies_enabled": getattr(s, "FREEBIES_ENABLED_DEFAULT", True),
                 "lootbug_enabled": getattr(s, "LOOTBUG_ENABLED_DEFAULT", False),
                 "FOUNDERS_ENABLED": s.FOUNDERS_ENABLED,
+                "NOTICES_ENABLED": s.NOTICES_ENABLED,
                 "workflows_enabled": getattr(s, "WORKFLOWS_ENABLED_DEFAULT", False),
                 "detect_level_enabled": getattr(s, "DETECT_LEVEL_ENABLED", True),
             },
@@ -94,6 +95,7 @@ def settings_get():
                 "FREEBIES_CLOSE_ROI": list(s.FREEBIES_CLOSE_ROI),
                 "FREEBIES_POST_CLAIM_DELAY_S": s.FREEBIES_POST_CLAIM_DELAY_S,
             },
+            "notices": {key: getattr(s, key) for key in s.NOTICE_DEFAULTS},
             "founders": {
                 "FOUNDERS_CHECK_INTERVAL_S_FIRST": s.FOUNDERS_CHECK_INTERVAL_S_FIRST,
                 "FOUNDERS_CHECK_INTERVAL_S_SLOW": s.FOUNDERS_CHECK_INTERVAL_S_SLOW,

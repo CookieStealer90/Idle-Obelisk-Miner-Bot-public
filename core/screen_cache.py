@@ -24,6 +24,9 @@ _locks = {}
 _locks_guard = threading.Lock()
 _SLOT_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}\Z")
 _PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+# Windows file timestamps and Python's wall clock can differ slightly in
+# precision/rounding. Do not treat a newly published frame as future-dated.
+_FUTURE_MTIME_TOLERANCE_S = 0.05
 
 
 def _log(message):
@@ -68,7 +71,10 @@ def _cached_data(path, max_age):
     """Read an immutable PNG snapshot. Caller holds the path lock."""
     with open(path, "rb") as stream:
         age = time.time() - os.fstat(stream.fileno()).st_mtime
-        if age < 0 or age >= max_age:
+        if age < -_FUTURE_MTIME_TOLERANCE_S:
+            return None, age
+        age = max(0.0, age)
+        if age >= max_age:
             return None, age
         return stream.read(), age
 

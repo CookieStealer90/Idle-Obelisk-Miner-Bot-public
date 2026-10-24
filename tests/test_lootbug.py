@@ -1,4 +1,4 @@
-"""Regression tests for the single-click Lootbug buy-box flow (no ADB)."""
+"""Regression tests for bounded Lootbug Buy retries and verification (no ADB)."""
 import copy
 import sys
 import unittest
@@ -47,12 +47,12 @@ class LootbugTests(unittest.TestCase):
         self.miss = {"found": False, "score": 0.1}
 
     def test_buy_box_is_detected_and_clicked_once_without_bonus_mode(self):
-        self.feature.find_template.side_effect = [dict(self.hit), dict(self.hit)]
+        self.feature.find_template.side_effect = [dict(self.hit), dict(self.hit), dict(self.miss)]
         self.assertTrue(self.feature._run_scan_cycle())
         self.assertEqual(self.feature.tap.call_count, 2)  # Lootbug + one Buy click
         self.feature.tap.assert_called_with(400, 500, jitter=3)
         self.assertEqual(self.state.lootbug_bonus_count, 1)
-        self.feature._sleep_interruptible.assert_called_once_with(1.2)
+        self.assertEqual([c.args[0] for c in self.feature._sleep_interruptible.call_args_list], [1.2, 3.0])
         self.feature.find_template.assert_called_with(
             self.feature.get_screen.return_value[0], "Lootbug/lootbug_buy_bonus.png",
             roi=(310, 370, 505, 672), threshold=0.8)
@@ -60,7 +60,7 @@ class LootbugTests(unittest.TestCase):
         self.assertTrue(self.feature.get_screen.call_args.kwargs["force"])
 
     def test_obscured_buy_box_retries_with_lock_and_never_closes(self):
-        self.feature.find_template.side_effect = [dict(self.hit), dict(self.miss), dict(self.miss), dict(self.hit)]
+        self.feature.find_template.side_effect = [dict(self.hit), dict(self.miss), dict(self.miss), dict(self.hit), dict(self.miss)]
         waits = []
 
         def wait(seconds):
@@ -69,10 +69,10 @@ class LootbugTests(unittest.TestCase):
 
         self.feature._sleep_interruptible.side_effect = wait
         self.assertEqual(self.feature._try_run_with_lock(), "ok")
-        self.assertEqual(waits, [1.2, 3.0, 3.0])
+        self.assertEqual(waits, [1.2, 3.0, 3.0, 3.0])
         self.assertEqual(self.feature.tap.call_count, 2)
         self.assertEqual(self.state.lootbug_bonus_count, 1)
-        self.assertEqual(self.feature.get_screen.call_count, 3)
+        self.assertEqual(self.feature.get_screen.call_count, 4)
         self.feature.get_cached_screen.assert_called_once_with("game_scr", max_age=5.0)
         for call in self.feature.find_template.call_args_list[1:]:
             self.assertEqual(call.args[1], "Lootbug/lootbug_buy_bonus.png")
@@ -96,17 +96,78 @@ class LootbugTests(unittest.TestCase):
         self.assertTrue(self.feature._wake_evt.is_set())
 
     def test_failed_buy_is_retried_and_only_success_is_counted(self):
-        self.feature.find_template.side_effect = [dict(self.hit), dict(self.hit), dict(self.hit)]
+        self.feature.find_template.side_effect = [dict(self.hit), dict(self.hit), dict(self.hit), dict(self.miss)]
         self.feature.tap.side_effect = [True, False, True]
         self.feature._run_scan_cycle()
         self.assertEqual(self.feature.tap.call_count, 3)
         self.assertEqual(self.state.lootbug_bonus_count, 1)
-        self.assertEqual([call.args[0] for call in self.feature._sleep_interruptible.call_args_list], [1.2, 3.0])
+        self.assertEqual([call.args[0] for call in self.feature._sleep_interruptible.call_args_list], [1.2, 3.0, 3.0])
 
     def test_no_lootbug_does_not_click(self):
         self.feature.find_template.return_value = dict(self.miss)
         self.assertFalse(self.feature._run_scan_cycle())
         self.feature.tap.assert_not_called()
+
+    def test_adb_success_with_visible_buy_box_retries_then_counts_once(self):
+        self.feature.find_template.side_effect = [
+            dict(self.hit), dict(self.hit), dict(self.hit), dict(self.hit), dict(self.miss)]
+        self.assertEqual(self.feature._try_run_with_lock(), "ok")
+        self.assertEqual(self.feature.tap.call_count, 3)
+        self.assertEqual(self.state.lootbug_bonus_count, 1)
+        self.assertEqual(self.feature.get_screen.call_count, 4)
+        self.assertFalse(self.state.ingame_action_lock.locked())
+
+    def test_visible_buy_box_after_all_successful_adb_taps_never_counts(self):
+        self.settings.LOOTBUG_BUY_MAX_ATTEMPTS = 2
+        self.feature.find_template.return_value = dict(self.hit)
+        self.assertEqual(self.feature._try_run_with_lock(), "ok")
+        self.assertEqual(self.feature.tap.call_count, 3)
+        self.assertEqual(self.state.lootbug_bonus_count, 0)
+        self.assertEqual(self.feature.get_screen.call_count, 4)
+        self.assertFalse(self.state.ingame_action_lock.locked())
+
+    def test_missing_verification_frame_does_not_count_or_use_stale_frame(self):
+        self.settings.LOOTBUG_BUY_MAX_ATTEMPTS = 1
+        self.feature.find_template.return_value = dict(self.hit)
+        with patch.object(self.feature, "_fresh_own_screen", side_effect=[object(), None]):
+            self.assertFalse(self.feature._buy_when_visible(.8))
+        self.feature.tap.assert_called_once()
+        self.assertEqual(self.state.lootbug_bonus_count, 0)
+
+    def test_open_dialog_resumes_without_clicking_another_lootbug(self):
+        with patch.object(self.feature, "_find_any_template", return_value=dict(self.miss)):
+            self.feature.find_template.side_effect = [dict(self.hit), dict(self.hit), dict(self.miss)]
+            self.assertEqual(self.feature._try_run_with_lock(), "ok")
+        self.feature.tap.assert_called_once_with(400, 500, jitter=3)
+        self.assertEqual(self.state.lootbug_bonus_count, 1)
+        self.assertEqual(getattr(self.state, "lootbug_clicked_count", 0), 0)
+        self.assertFalse(self.state.ingame_action_lock.locked())
+
+    def test_stale_cached_buy_box_never_causes_a_tap(self):
+        self.settings.LOOTBUG_BUY_MAX_ATTEMPTS = 2
+        with patch.object(self.feature, "_find_any_template", return_value=dict(self.miss)):
+            self.feature.find_template.side_effect = [dict(self.hit), dict(self.miss), dict(self.miss)]
+            self.feature._try_run_with_lock()
+        self.feature.tap.assert_not_called()
+        self.assertEqual(self.state.lootbug_bonus_count, 0)
+
+    def test_founders_due_after_ignored_tap_yields_and_next_cycle_recovers_dialog(self):
+        self.feature.find_template.side_effect = [dict(self.hit), dict(self.hit), dict(self.hit)]
+        def wait(seconds):
+            if seconds == 3:
+                self.state.founders_next_check_ts = 100
+        self.feature._sleep_interruptible.side_effect = wait
+        self.assertEqual(self.feature._try_run_with_lock(), "founders_due")
+        self.assertEqual(self.feature.tap.call_count, 2)
+        self.assertEqual(self.state.lootbug_bonus_count, 0)
+        self.assertFalse(self.state.ingame_action_lock.locked())
+        self.state.founders_next_check_ts = 1000
+        self.feature._sleep_interruptible.side_effect = None
+        with patch.object(self.feature, "_find_any_template", return_value=dict(self.miss)):
+            self.feature.find_template.side_effect = [dict(self.hit), dict(self.hit), dict(self.miss)]
+            self.feature._try_run_with_lock()
+        self.assertEqual(self.feature.tap.call_count, 3)
+        self.assertEqual(self.state.lootbug_bonus_count, 1)
 
     def test_due_and_soon_founders_checks_yield_without_lock_or_scan(self):
         for deadline in (0, 95, 100, 104.9, 105):
@@ -184,12 +245,12 @@ class LootbugTests(unittest.TestCase):
         self.feature.get_screen.assert_called_once_with("lootbug_scr", max_age=0.0, force=True)
 
     def test_missing_popup_screenshot_is_retried(self):
-        self.feature.find_template.side_effect = [dict(self.hit), dict(self.hit)]
-        with patch.object(self.feature, "_fresh_own_screen", side_effect=[None, object()]):
+        self.feature.find_template.side_effect = [dict(self.hit), dict(self.hit), dict(self.miss)]
+        with patch.object(self.feature, "_fresh_own_screen", side_effect=[None, object(), object()]):
             self.feature._run_scan_cycle()
         self.assertEqual(self.feature.tap.call_count, 2)
         self.assertEqual(self.state.lootbug_bonus_count, 1)
-        self.assertEqual([call.args[0] for call in self.feature._sleep_interruptible.call_args_list], [1.2, 3.0])
+        self.assertEqual([call.args[0] for call in self.feature._sleep_interruptible.call_args_list], [1.2, 3.0, 3.0])
 
     def test_disable_before_buy_does_not_click_buy(self):
         self.feature.find_template.return_value = dict(self.hit)

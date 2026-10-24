@@ -54,6 +54,7 @@ def run():
     state.freebies_enabled = bool(getattr(_settings_mod, "FREEBIES_ENABLED_DEFAULT", True))
     state.lootbug_enabled = bool(getattr(_settings_mod, "LOOTBUG_ENABLED_DEFAULT", False))
     state.founders_enabled = bool(getattr(_settings_mod, "FOUNDERS_ENABLED", False))
+    state.notices_enabled = bool(getattr(_settings_mod, "NOTICES_ENABLED", False))
     state.workflows_master_enabled = bool(getattr(_settings_mod, "WORKFLOWS_ENABLED_DEFAULT", False))
     state.detect_level_enabled = bool(getattr(_settings_mod, "DETECT_LEVEL_ENABLED", True))
 
@@ -61,11 +62,13 @@ def run():
     from features import freebies as freebies_feature
     from features import lootbug as lootbug_feature
     from features import founders as founders_feature
+    from features import notices as notices_feature
     from features import workflows as workflows_feature
     from features import detect_level as detect_level_feature
     freebies_feature.start()
     lootbug_feature.start()
     founders_feature.start()
+    notices_feature.start()
     workflows_feature.start()
     detect_level_feature.start()
     bot_log(f"[STARTUP] Freebies feature armed (enabled={state.freebies_enabled})")
@@ -87,6 +90,8 @@ def run():
             lootbug_feature.toggle()
         elif c == "founders_toggle":
             founders_feature.toggle()
+        elif c == "notices_toggle":
+            notices_feature.toggle()
         elif c == "detect_level_toggle":
             detect_level_feature.toggle()
         elif c == "detect_level_now":

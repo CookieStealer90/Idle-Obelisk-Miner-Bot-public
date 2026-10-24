@@ -110,6 +110,17 @@ def build_state_dict():
                 "next_check_ts": state.founders_next_check_ts,
                 "next_check_remaining": max(0, int(state.founders_next_check_ts - now)),
             },
+            "notices": {
+                "enabled": state.notices_enabled,
+                "clicked": state.notices_clicked_count,
+                "last_scan_ts": state.notices_last_scan_ts,
+                "next_check_ts": state.notices_next_check_ts,
+                "last_scan_age": max(0, int(now - state.notices_last_scan_ts)) if state.notices_last_scan_ts > 0 else None,
+                "next_check_remaining": max(0, int(state.notices_next_check_ts - now)),
+                "status": state.notices_status,
+                "error": state.notices_error,
+                "score": state.notices_last_score,
+            },
         }
     except Exception as e:
         return {"started": False, "error": str(e)}

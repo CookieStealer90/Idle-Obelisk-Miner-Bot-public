@@ -52,7 +52,7 @@ ADB_MAX_RETRIES = 2
 
 # Legacy base path: captures use its directory with a unique slot/attempt name.
 REMOTE_SCREEN = "/sdcard/__scr.png"
-LOCAL_SCREEN = str(BASE_DIR / "__scr.png")
+LOCAL_SCREEN = str(TEMP_DIR / "__scr.png")
 
 # ========= Screenshot capture (all features, full-device PNGs) =========
 SCREENSHOT_CAPTURE_ATTEMPTS = 2       # complete captures, separate from ADB retries
@@ -136,7 +136,7 @@ LOOTBUG_SHARED_SCREEN_SLOT = "game_scr"   # cache slot to piggy-back on
 LOOTBUG_OWN_SCREEN_SLOT = "lootbug_scr"   # slot used when forced fresh pull
 
 LOOTBUG_TAP_JITTER_PX = 4
-LOOTBUG_POST_CLICK_DELAY_S = 1.2       # wait between lootbug-tap and buy-box scan
+LOOTBUG_POST_CLICK_DELAY_S = 2.0       # wait between lootbug-tap and buy-box scan
 
 # The game remembers the bonus selection. Enable "Remove lootbug gem confirmation"
 # in-game so a single click on the detected buy box completes the purchase.
@@ -239,6 +239,11 @@ WORKFLOWS_MAX_CALL_DEPTH = 5             # max nested call_workflow depth
 WORKFLOWS_LOG_LEVEL = "FULL"             # general worker / scheduler messages
 WORKFLOWS_LOG_LEVEL_STEP = "FULL"        # individual step execution
 WORKFLOWS_LOG_LEVEL_BUSY = "FULL"        # postponed / rejected (lock busy)
+
+# ========= Notices feature =========
+from config.notice_defaults import NOTICE_DEFAULTS
+globals().update(NOTICE_DEFAULTS)
+NOTICES_ENABLED = False
 
 # --- Apply WebUI overrides (if present) ---
 try:

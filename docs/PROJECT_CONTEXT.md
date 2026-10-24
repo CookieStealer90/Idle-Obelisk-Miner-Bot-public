@@ -1,6 +1,6 @@
 # Project Context: Idle Obelisk Miner Bot
 
-Updated: 2026-10-23. Based on existing source code, local configurations,
+Updated: 2026-10-24. Based on existing source code, local configurations,
 `README.md` and the former project overview. Primarily a static inventory; the screenshot layer
 described below was also checked on the emulator. Local settings and workflows
 may change independently of versioned code.
@@ -47,6 +47,14 @@ lazy imports to avoid circular imports. Level detection writes
 
 ## Implemented Features
 
+- **Notices:** independent cache-first worker and Controls switch. Saves color
+  notice crops before a single dismiss tap, then checks fresh screenshots until
+  no notice remains. Default interval: 45 minutes +/-15%; operational settings
+  are editable in WebUI, startup is OFF. Two masked frame variants support the
+  supplied level and decorated shard boxes at 900 x 1600. Persistent inbox below
+  Last Screenshot, manual acknowledgement, animated deletion, preview and a
+  cache-first detection test with fresh-capture fallback. Shared action lock, bounded chains and protection
+  against blind repeated taps. No OCR. Details: [Notices](NOTICES.md).
 - **Freebies:** periodic detection using two icon templates, menu opening,
   scrolling to find the claim button, claiming, counting and closing the menu.
   Enabling wakes the worker for a prompt cycle.
@@ -67,11 +75,19 @@ lazy imports to avoid circular imports. Level detection writes
   settings are saved.
 - **Lootbugs:** detect `lootbug_tpl_*.png`, click, wait and capture a fresh
   screenshot; then find `Lootbug/lootbug_buy_bonus.png` within
-  `LOOTBUG_BONUS_BUY_ROI` and click once at the match center. Buy ROI:
+  `LOOTBUG_BONUS_BUY_ROI` and tap at the match center. Wait
+  `LOOTBUG_POST_CLICK_DELAY_S` (default 2 seconds) before the first Buy scan. Buy ROI:
   `(310, 370, 505, 672)`. If notifications obscure the Buy box, retry with fresh
   screenshots every `LOOTBUG_BUY_RETRY_S` (default 3 seconds), up to
   `LOOTBUG_BUY_MAX_ATTEMPTS` (default 5; integer 1-100). Missing screenshots
-  and failed Buy taps also consume attempts. Exhaustion aborts this cycle and
+  and failed Buy taps also consume attempts. After each successful ADB Buy tap,
+  wait `LOOTBUG_BUY_RETRY_S` and verify with a fresh own-slot screenshot. A still
+  visible Buy box or missing verification frame triggers another bounded attempt.
+  Count once only when that fresh post-tap frame no longer matches Buy; this
+  observes disappearance, not the actual reward. No Close tap is issued.
+  When no Lootbug is detected, also check for an existing Buy box and resume
+  its bounded search, including after a Founders interruption. Cached detections
+  are only hints; purchase taps always require a fresh match. Exhaustion aborts this cycle and
   releases the action lock; the next regular scan uses the normal interval.
   Disabling/stopping or an enabled Founders check becoming due aborts early.
   The action lock stays held only during this bounded search. There is
@@ -161,6 +177,33 @@ Default workflows include Bomb Rotation, Prestige, Drone Switch,
 Upgrades/Contracts and Rainbow Floor Bombs. The inspected local
 `user_workflows.json` also contains a Stargazing Collector. Definitions document
 the available flow, not its current reliability in the game.
+
+## Dashboard Scan Countdowns
+
+The Freebie, Lootbug, Founders, Level and Notices status tiles use a fixed,
+single-line footer: a slim progress track and compact `m:ss` / `h:mm:ss`
+countdown. Disabled scans show an empty track and `Off`; due scans show `Ready`.
+Level setup issues use `Setup`. Last-detection/scan ages and errors remain in
+the footer tooltip and accessible label instead of extending the tile height.
+All countdown text stays dim grey, including Ready and Off; status colors apply
+to the bar. Countdown initialization replaces the entire footer even when a
+cached older template still nests the timer beside legacy last-scan text.
+Tiles use content-driven height without an imposed minimum height; the compact
+footer keeps only four pixels of spacing above the progress track and timer.
+
+Existing one-second Socket.IO state updates drive the display. Footer nodes
+are created once, and subsequent updates change only text, attributes and a
+CSS transform. Unchanged status value markup is retained. There is no added
+polling loop or full status-panel replacement. Progress fills from the first
+observed remaining time for a deadline to its expiry; a changed deadline or
+feature reactivation resets it. Reloading the page starts a new observation.
+The remaining time always comes from the worker's published schedule, including
+variance and busy retries. The Notices state now also exposes `next_check_ts`.
+Reduced-motion preferences disable the short transform transition.
+
+Regression tests: `tests/test_dashboard_status.cjs` and
+`tests/test_dashboard_notices.cjs` cover node preservation, schedule resets,
+disabled states, compact times and tooltip details without game access.
 
 ## Technologies, Startup and Configuration
 
@@ -271,7 +314,11 @@ emulator screenshots. Each capture and retry uses its own Android file with a
 slot name and UUID. Local files are published atomically only after PNG
 validation; readers and writers use the same lock per destination path.
 `get_cached_screen()` and `get_latest_cached_screen()` read only sufficiently
-fresh local images. If the shared cache is unavailable, Lootbug and Founders
+fresh local images. File timestamps up to 50 ms ahead of Python's wall clock
+are treated as age zero to tolerate Windows timestamp precision/rounding;
+larger future offsets and expired frames remain invalid. This also prevents
+the viewer from rejecting just-published PNGs with slightly negative ages.
+If the shared cache is unavailable, Lootbug and Founders
 capture only in their own slots. Forced or failed fresh captures never return
 old images as a fallback. Rainbow Check receives its color image directly from
 the validated capture/cache access. The dashboard displays an independent copy
@@ -307,8 +354,9 @@ Settings, logging and verification details: [Screenshots](SCREENSHOTS.md).
   and locking/timing with simulated game access. There is no complete end-to-end
   suite for all real game flows. Windows CI runs Python and JavaScript
   regression tests.
-  `tests/test_lootbug.py` covers the Buy-box flow with exactly one purchase
-  click, obscured Buy box, missing screenshots, tap failures, retries, ON/OFF
+  `tests/test_lootbug.py` covers the Buy-box flow with post-tap verification,
+  ignored taps, existing-dialog recovery, obscured Buy box, missing screenshots,
+  tap failures, bounded retries, ON/OFF
   and configuration migration without real game access.
   `tests/test_screen_cache.py` and `tests/test_screenshot_consumers.py` cover
   isolated capture paths, actual PNG decoding, failures/retries, concurrency,
@@ -321,6 +369,11 @@ Settings, logging and verification details: [Screenshots](SCREENSHOTS.md).
   temporary files; it is neither a read-only check nor a feature regression
   test. `INSTALL-ENVIRONMENT.bat` installs packages.
 - `tools/calibrate_rainbow.py` analyzes existing images for calibration.
+- `tools/create_notice_template.py` creates sanitized Notices frame/mask pairs
+  from local screenshots using known-frame presets, explicit crop/region
+  coordinates or interactive selection. Defaults to staging under `temp/`;
+  `--install` explicitly activates new pairs. Validation uses the existing
+  detector without starting the bot. See [template guide](../tools/CREATE_NOTICE_TEMPLATE.md).
   `tools/sync_workflows.py` writes local workflows into
   `config/config_workflows.py`, modifying source code.
 - Bot starts are not side-effect-free checks: importing `bot_app.py` already
