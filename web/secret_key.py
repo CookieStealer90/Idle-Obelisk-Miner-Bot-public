@@ -5,6 +5,7 @@ from pathlib import Path
 import re
 import secrets
 import tempfile
+import time
 
 
 def load_or_create_secret_key(path: Path) -> str:
@@ -35,7 +36,17 @@ def load_or_create_secret_key(path: Path) -> str:
                 temporary_path.unlink(missing_ok=True)
 
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        for attempt in range(7):
+            try:
+                content = path.read_text(encoding="utf-8")
+                break
+            except PermissionError as exc:
+                # Concurrent Windows renames can briefly deny read access even
+                # though the winner has already published a complete key.
+                if getattr(exc, "winerror", None) not in (5, 32, 33) or attempt == 6:
+                    raise
+                time.sleep(0.01 * (2 ** attempt))
+        data = json.loads(content)
         key = data.get("secret_key") if isinstance(data, dict) else None
         if not isinstance(key, str) or re.fullmatch(r"[0-9a-f]{64}", key) is None:
             raise ValueError("invalid key format")

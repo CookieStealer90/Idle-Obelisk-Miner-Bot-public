@@ -197,6 +197,12 @@ the available flow, not its current reliability in the game.
   file while the server is stopped; existing signed sessions become invalid.
   This does not add authentication or change the LAN/origin policy.
   Tests: `tests/test_secret_key.py`, without bot startup or ADB.
+  Creation atomically publishes a fully written, flushed temporary file without
+  replacing an existing key (Windows rename, POSIX hard link). Concurrent
+  threads/processes reuse the winning key. Reads retry Windows access/sharing/
+  lock errors (5, 32, 33) up to six times, with exponential delays totaling
+  0.63 seconds, because concurrent renames can briefly block readers. Persistent
+  failures still abort startup; invalid content is never retried or replaced.
 
 ## Existing Architecture Decisions and Conventions
 

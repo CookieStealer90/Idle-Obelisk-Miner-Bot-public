@@ -1,6 +1,7 @@
 """Key persistence checks without importing the app or starting the bot."""
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 import json
+import multiprocessing
 import os
 from pathlib import Path
 import tempfile
@@ -35,6 +36,64 @@ class SecretKeyTests(unittest.TestCase):
             with ThreadPoolExecutor(max_workers=8) as executor:
                 keys = list(executor.map(lambda _: load_or_create_secret_key(path), range(32)))
             self.assertEqual(len(set(keys)), 1)
+            self.assertEqual(list(path.parent.iterdir()), [path])
+
+    def test_transient_windows_read_conflicts_reuse_existing_key(self):
+        with tempfile.TemporaryDirectory(dir=ROOT) as directory:
+            path = Path(directory) / "web_secret.json"
+            key = load_or_create_secret_key(path)
+            original = path.read_bytes()
+            for winerror in (5, 32, 33):
+                with self.subTest(winerror=winerror):
+                    conflict = PermissionError("File temporarily locked")
+                    conflict.winerror = winerror
+                    with patch.object(Path, "read_text", side_effect=[
+                        conflict, conflict, original.decode("utf-8")
+                    ]) as read, patch("web.secret_key.time.sleep") as sleep:
+                        self.assertEqual(load_or_create_secret_key(path), key)
+                    self.assertEqual(read.call_count, 3)
+                    self.assertEqual(sleep.call_count, 2)
+                    self.assertEqual(path.read_bytes(), original)
+
+    def test_persistent_windows_read_conflict_fails_after_bounded_retries(self):
+        with tempfile.TemporaryDirectory(dir=ROOT) as directory:
+            path = Path(directory) / "web_secret.json"
+            load_or_create_secret_key(path)
+            original = path.read_bytes()
+            conflict = PermissionError("File remains locked")
+            conflict.winerror = 32
+            with patch.object(Path, "read_text", side_effect=conflict) as read, patch(
+                "web.secret_key.time.sleep"
+            ) as sleep:
+                with self.assertRaises(RuntimeError) as raised:
+                    load_or_create_secret_key(path)
+            self.assertIs(raised.exception.__cause__, conflict)
+            self.assertEqual(read.call_count, 7)
+            self.assertAlmostEqual(sum(call.args[0] for call in sleep.call_args_list), 0.63)
+            self.assertEqual(path.read_bytes(), original)
+
+    def test_other_read_errors_fail_without_retry(self):
+        with tempfile.TemporaryDirectory(dir=ROOT) as directory:
+            path = Path(directory) / "web_secret.json"
+            load_or_create_secret_key(path)
+            for error in (PermissionError("Access denied"), OSError("Read failed")):
+                with self.subTest(error=error), patch.object(
+                    Path, "read_text", side_effect=error
+                ), patch("web.secret_key.time.sleep") as sleep:
+                    with self.assertRaises(RuntimeError) as raised:
+                        load_or_create_secret_key(path)
+                    self.assertIs(raised.exception.__cause__, error)
+                    sleep.assert_not_called()
+
+    def test_separate_processes_reuse_persisted_key(self):
+        with tempfile.TemporaryDirectory(dir=ROOT) as directory:
+            path = Path(directory) / "web_secret.json"
+            with ProcessPoolExecutor(
+                max_workers=8, mp_context=multiprocessing.get_context("spawn")
+            ) as executor:
+                keys = list(executor.map(load_or_create_secret_key, [path] * 32))
+            self.assertEqual(len(set(keys)), 1)
+            self.assertEqual(load_or_create_secret_key(path), keys[0])
             self.assertEqual(list(path.parent.iterdir()), [path])
 
     def test_invalid_existing_key_fails_without_replacing_it(self):
