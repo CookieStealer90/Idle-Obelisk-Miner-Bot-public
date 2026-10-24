@@ -252,7 +252,7 @@ class FeatureTests(unittest.TestCase):
                 self.feature.bot_log.assert_any_call(
                     f"[FOUNDERS] next check in {delay:g}s (mode=FIRST, reason={result})", "FULL")
 
-    def test_first_detection_switches_immediately_and_misses_keep_slow_mode(self):
+    def test_detection_uses_slow_after_fresh_recheck_then_regular_miss_uses_fast(self):
         self.assertEqual(self.feature._check_interval(), 42)
         self.feature.find_template.side_effect = [
             {"found": True, "score": .99, "cx": 21, "cy": 22},
@@ -271,11 +271,50 @@ class FeatureTests(unittest.TestCase):
         self.feature.find_template.side_effect = None
         self.feature.find_template.return_value = {"found": False, "score": .1}
         self.assertFalse(self.feature._run_scan_cycle())
-        self.assertEqual(self.feature._check_interval(), 3600)
+        self.assertEqual(self.feature._check_interval(), 42)
         self.assertFalse(self.feature.toggle())
         self.assertTrue(self.feature.toggle())
         self.assertEqual(self.feature._check_interval(), 42)
         self.assertEqual(self.state.founders_next_check_ts, 0)
+
+    def test_worker_returns_to_fast_until_next_detection(self):
+        hit = {"found": True, "score": .99, "cx": 21, "cy": 22}
+        miss = {"found": False, "score": .1}
+        # Claim and fresh recheck, two regular misses, then another claim/recheck.
+        self.feature.find_template.side_effect = [hit, miss, miss, miss, hit, miss]
+        sleeps = []
+        deadlines = []
+
+        def sleep_cycle(seconds):
+            sleeps.append(seconds)
+            deadlines.append(self.state.founders_next_check_ts)
+            if len(sleeps) == 5:
+                self.feature._stop_evt.set()
+
+        with patch.object(self.feature, "_sleep_interruptible", side_effect=sleep_cycle):
+            self.feature._worker()
+        self.assertEqual(sleeps, [3.0, 3600, 42, 42, 3600])
+        self.assertEqual(deadlines, [0, 3700, 142, 142, 3700])
+        self.assertEqual(self.state.founders_clicked_count, 2)
+        self.feature.bot_log.assert_any_call(
+            "[FOUNDERS] no bundle detected -> mode=FIRST (fast checks, interval=42s)", "FULL")
+
+    def test_unavailable_screenshot_does_not_change_slow_phase(self):
+        self.feature._detected_generation = self.feature._activation_generation
+        with patch.object(self.feature, "_find_bundle", return_value=None):
+            self.assertFalse(self.feature._run_scan_cycle())
+        self.assertEqual(self.feature._check_interval(), 3600)
+
+    def test_reactivation_during_miss_does_not_reset_new_session_detection(self):
+        def match(*args, **kwargs):
+            self.feature.toggle()
+            self.feature.toggle()
+            self.feature._detected_generation = self.feature._activation_generation
+            return {"found": False, "score": .1}
+
+        self.feature.find_template.side_effect = match
+        self.assertFalse(self.feature._run_scan_cycle())
+        self.assertEqual(self.feature._check_interval(), 3600)
 
     def test_reactivation_during_scan_keeps_first_mode(self):
         def match(*args, **kwargs):

@@ -82,6 +82,10 @@ def _run_scan_cycle(match=None) -> bool:
     if not m["found"]:
         _log(f"[FOUNDERS] founders: not present (score={m['score']:.3f})",
              "FOUNDERS_LOG_LEVEL")
+        if generation == _activation_generation and _detected_generation == generation:
+            _detected_generation = None
+            _log(f"[FOUNDERS] no bundle detected -> mode=FIRST "
+                 f"(fast checks, interval={_check_interval():g}s)")
         return False
 
     # A scan started before reactivation must not switch the new session to slow mode.

@@ -73,8 +73,9 @@ test('Founders FIRST and SLOW intervals render with descriptions and save as num
     FOUNDERS_CHECK_INTERVAL_S_SLOW:3600}};renderSettings(settingsData);saveSettings();`,context);
   assert.match(container.innerHTML,/cfg-founders-FOUNDERS_CHECK_INTERVAL_S_FIRST/);
   assert.match(container.innerHTML,/cfg-founders-FOUNDERS_CHECK_INTERVAL_S_SLOW/);
-  assert.match(container.innerHTML,/startup or activation/);
-  assert.match(container.innerHTML,/slow mode until restart or reactivation/);
+  assert.match(container.innerHTML,/fast scans after startup, activation or a regular scan without a bundle/);
+  assert.match(container.innerHTML,/returns to FIRST \(fast checks\)/);
+  assert.match(container.innerHTML,/Immediate fresh rechecks after taps do not reset SLOW/);
   assert.deepEqual(saved.founders,{FOUNDERS_CHECK_INTERVAL_S_FIRST:45,
     FOUNDERS_CHECK_INTERVAL_S_SLOW:7200});
 });

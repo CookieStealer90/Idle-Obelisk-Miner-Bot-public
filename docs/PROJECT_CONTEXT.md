@@ -139,13 +139,16 @@ lazy imports to avoid circular imports. Level detection writes
   (default 180 seconds) until the first template detection. That detection
   immediately selects `FOUNDERS_CHECK_INTERVAL_S_SLOW` (default 3000 seconds),
   including when the tap fails; failed taps still do not increase counters.
-  Later misses retain slow mode. Restarting or disabling and enabling resets
+  A later regular scan without a bundle returns to FIRST (fast checks) until
+  the next detection selects SLOW again. Immediate fresh rechecks after taps
+  do not reset SLOW; unavailable screenshots do not change the phase.
+  Restarting or disabling and enabling resets
   the phase and activation wakes the worker for a prompt scan. Busy/game-absent
   retries keep their shorter delays. Both intervals are editable in the WebUI
   and require a process restart. Legacy `FOUNDERS_CHECK_INTERVAL_S` migrates
   to FIRST; explicit new values win and SLOW uses its default when absent.
-  Logs show startup interval values, FIRST on reactivation, the first detection's
-  switch to SLOW, and each next-check delay with mode and scheduling reason
+  Logs show startup interval values, FIRST on reactivation, transitions back to
+  FIRST after misses and to SLOW after detection, and each next-check delay with mode and scheduling reason
   (`ok`, `busy`, `no_game`, `pending`), fresh rechecks and chain limits.
   These use the configured Founders log routing;
   busy scheduling uses `FOUNDERS_LOG_LEVEL_BUSY`.

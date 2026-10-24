@@ -156,8 +156,8 @@ LOOTBUG_LOG_LEVEL_BONUS = "FULL"       # bonus-purchase events
 
 # ========= Founders feature (independent of Lootbug) =========
 FOUNDERS_ENABLED = False             # startup default; runtime toggle is separate
-FOUNDERS_CHECK_INTERVAL_S_FIRST = 180.0  # startup/activation until first detection
-FOUNDERS_CHECK_INTERVAL_S_SLOW = 3000.0  # after first detection, until reactivation
+FOUNDERS_CHECK_INTERVAL_S_FIRST = 180.0  # fast scans at startup/activation and after a regular miss
+FOUNDERS_CHECK_INTERVAL_S_SLOW = 3000.0  # after detection until a regular scan misses
 FOUNDERS_BUSY_RETRY_S = 15.0
 FOUNDERS_MAX_CLAIMS_PER_CYCLE = 3     # fresh recheck after every successful tap
 FOUNDERS_DETECT_ROI = (110, 201, 753, 1021)
