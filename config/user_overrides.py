@@ -31,6 +31,9 @@ def migrate_founders_settings(overrides: dict) -> dict:
         result["founders"] = founders
     if "founders" in result:
         founders = dict(result["founders"])
+        if "FOUNDERS_CHECK_INTERVAL_S" in founders:
+            founders.setdefault("FOUNDERS_CHECK_INTERVAL_S_FIRST",
+                                founders.pop("FOUNDERS_CHECK_INTERVAL_S"))
         if "FOUNDERS_ENABLED" in founders:
             startup = dict(result.get("startup_defaults", {}))
             startup.setdefault("FOUNDERS_ENABLED", founders.pop("FOUNDERS_ENABLED"))
@@ -53,13 +56,19 @@ def validate_screenshot_settings(values: dict) -> dict:
 
 
 def normalize_user_settings(overrides: dict) -> dict:
-    """Migrate Founders and remove obsolete Lootbug bonus selection settings."""
+    """Migrate feature settings and remove obsolete Lootbug bonus selection settings."""
     if not isinstance(overrides, dict):
         raise ValueError("settings: expected object")
     for section, values in overrides.items():
         if not isinstance(values, dict):
             raise ValueError(f"settings.{section}: expected object")
     result = migrate_founders_settings(overrides)
+    if "freebies" in result:
+        freebies = dict(result["freebies"])
+        if "FREEBIES_CHECK_INTERVAL_S" in freebies:
+            freebies.setdefault("FREEBIES_CHECK_INTERVAL_S_FIRST",
+                                freebies.pop("FREEBIES_CHECK_INTERVAL_S"))
+        result["freebies"] = freebies
     if "screenshot_capture" in result:
         result["screenshot_capture"] = validate_screenshot_settings(result["screenshot_capture"])
     if "lootbug" in result:
@@ -97,6 +106,8 @@ def load_user_settings(base_dir: Path) -> dict:
 def apply_overrides_to_settings(settings_globals: dict, overrides: dict):
     """Apply user_settings.json overrides to settings globals."""
     overrides = normalize_user_settings(overrides)
+    for key, value in overrides.get("tapping", {}).items():
+        settings_globals[key] = value
     capture = overrides.get("screenshot_capture", {})
     for key in ("SCREENSHOT_CAPTURE_ATTEMPTS", "SCREENSHOT_RETRY_DELAY_S",
                 "SCREENSHOT_LOG_LEVEL", "SCREENSHOT_LOG_CACHE_HITS"):
@@ -157,7 +168,7 @@ def apply_overrides_to_settings(settings_globals: dict, overrides: dict):
 
     freebies = overrides.get("freebies", {})
     _freebies_keys = (
-        "FREEBIES_CHECK_INTERVAL_S",
+        "FREEBIES_CHECK_INTERVAL_S_FIRST", "FREEBIES_CHECK_INTERVAL_S_SLOW",
         "FREEBIES_DETECT_ROI",
         "FREEBIES_CLAIM_ROI",
         "FREEBIES_MATCH_THRESHOLD",
@@ -200,6 +211,7 @@ def apply_overrides_to_settings(settings_globals: dict, overrides: dict):
         "LOOTBUG_BONUS_BUY_ROI",
         "LOOTBUG_BONUS_TAP_JITTER_PX",
         "LOOTBUG_BUY_RETRY_S",
+        "LOOTBUG_BUY_MAX_ATTEMPTS", "LOOTBUG_FOUNDERS_LOOKAHEAD_S",
     )
     _lootbug_roi_keys = ("LOOTBUG_DETECT_ROI", "LOOTBUG_BONUS_BUY_ROI")
     for k in _lootbug_keys:
@@ -214,7 +226,9 @@ def apply_overrides_to_settings(settings_globals: dict, overrides: dict):
 
     founders = overrides.get("founders", {})
     for key in (
-        "FOUNDERS_CHECK_INTERVAL_S", "FOUNDERS_BUSY_RETRY_S",
+        "FOUNDERS_CHECK_INTERVAL_S_FIRST", "FOUNDERS_CHECK_INTERVAL_S_SLOW",
+        "FOUNDERS_BUSY_RETRY_S",
+        "FOUNDERS_MAX_CLAIMS_PER_CYCLE",
         "FOUNDERS_DETECT_ROI", "FOUNDERS_TEMPLATE", "FOUNDERS_MATCH_THRESHOLD",
         "FOUNDERS_SCREEN_REUSE_AGE_S", "FOUNDERS_TAP_JITTER_PX",
         "FOUNDERS_LOG_LEVEL", "FOUNDERS_LOG_LEVEL_CLICK", "FOUNDERS_LOG_LEVEL_BUSY",

@@ -9,7 +9,9 @@ Why `input swipe x y x y <ms>` instead of `input tap`:
     that `input tap` emits. A zero-distance swipe with a real duration
     produces a proper press-and-release the game registers.
 
-    Set TAP_HOLD_MS = 0 in settings.py to fall back to plain `input tap`.
+    Default holds use bounded triangular variation when TAP_HUMANIZE_ENABLED
+    is enabled. Explicit hold_ms values are never varied. Set TAP_HOLD_MS = 0
+    to fall back to plain `input tap`.
 """
 import random
 
@@ -21,6 +23,12 @@ def tap(x: int, y: int, jitter: int = None, hold_ms: int = None) -> bool:
     """Tap at (x, y) with +/- jitter px, held for `hold_ms` ms."""
     j = int(jitter) if jitter is not None else int(getattr(s, "TAP_JITTER_PX", 4))
     hold = int(hold_ms) if hold_ms is not None else int(getattr(s, "TAP_HOLD_MS", 100))
+    if hold_ms is None and hold > 0 and getattr(s, "TAP_HUMANIZE_ENABLED", True):
+        variance = float(getattr(s, "TAP_HOLD_VARIANCE_PCT", 30.0)) / 100.0
+        if variance > 0:
+            # Bounded variation, with most durations near the configured base.
+            hold = max(1, round(random.triangular(
+                hold * (1.0 - variance), hold * (1.0 + variance), hold)))
 
     tx = int(x) + random.randint(-j, j)
     ty = int(y) + random.randint(-j, j)

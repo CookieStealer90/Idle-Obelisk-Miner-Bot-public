@@ -11,6 +11,7 @@ from config.user_overrides import normalize_user_settings, apply_overrides_to_se
 class LootbugTests(unittest.TestCase):
     def setUp(self):
         helpers.FeatureTests.setUp(self)
+        self.founders_feature = self.feature
         self.settings.BASE_DIR = helpers.ROOT
         self.settings.LOOTBUG_TEMPLATE_GLOB = "Lootbug/lootbug_tpl_*.png"
         self.settings.LOOTBUG_BONUS_BUY_ROI = (310, 370, 505, 672)
@@ -23,6 +24,7 @@ class LootbugTests(unittest.TestCase):
         self.settings.LOOTBUG_POST_CLICK_DELAY_S = 1.2
         self.state.lootbug_enabled = True
         self.state.lootbug_bonus_count = 0
+        self.state.founders_next_check_ts = 1000.0
         stubs = {"config.settings": self.settings, "config.app_state": self.state}
         # Reuse the isolated core dependencies; never import the real ADB helper.
         import types
@@ -106,6 +108,76 @@ class LootbugTests(unittest.TestCase):
         self.assertFalse(self.feature._run_scan_cycle())
         self.feature.tap.assert_not_called()
 
+    def test_due_and_soon_founders_checks_yield_without_lock_or_scan(self):
+        for deadline in (0, 95, 100, 104.9, 105):
+            with self.subTest(deadline=deadline):
+                self.state.founders_next_check_ts = deadline
+                self.assertEqual(self.feature._try_run_with_lock(), "founders_due")
+                self.assertFalse(self.state.ingame_action_lock.locked())
+        self.feature.get_cached_screen.assert_not_called()
+        self.feature.tap.assert_not_called()
+        self.state.founders_next_check_ts = 106
+        self.feature.find_template.return_value = dict(self.miss)
+        self.assertEqual(self.feature._try_run_with_lock(), "ok")
+
+    def test_disabled_founders_never_blocks_lootbug(self):
+        self.state.founders_enabled = False
+        self.state.founders_next_check_ts = 0
+        self.state.founders_followup_pending = True
+        self.feature.find_template.return_value = dict(self.miss)
+        self.assertEqual(self.feature._try_run_with_lock(), "ok")
+
+    def test_exhausted_buy_retries_release_lock_for_founders(self):
+        self.settings.LOOTBUG_BUY_MAX_ATTEMPTS = 3
+        self.feature.find_template.side_effect = [dict(self.hit)] + [dict(self.miss)] * 3
+        self.assertEqual(self.feature._try_run_with_lock(), "ok")
+        self.assertEqual(self.feature.get_screen.call_count, 3)
+        self.assertEqual(self.feature.tap.call_count, 1)
+        self.assertEqual(self.state.lootbug_bonus_count, 0)
+        self.assertFalse(self.state.ingame_action_lock.locked())
+        self.assertEqual([call.args[0] for call in self.feature._sleep_interruptible.call_args_list], [1.2, 3, 3])
+        self.assertTrue(any("exhausted after 3 attempts" in call.args[0]
+                            for call in self.feature.bot_log.call_args_list))
+        self.state.founders_next_check_ts = 0
+        self.feature.find_template.side_effect = [dict(self.hit), dict(self.miss)]
+        self.assertEqual(self.founders_feature._try_run_with_lock(), "ok")
+        self.assertEqual(self.state.founders_clicked_count, 1)
+        self.assertFalse(self.state.ingame_action_lock.locked())
+
+    def test_buy_search_yields_early_when_founders_becomes_due(self):
+        self.feature.find_template.side_effect = [dict(self.hit), dict(self.miss)]
+        def wait(seconds):
+            if seconds == 3:
+                self.state.founders_next_check_ts = 100
+        self.feature._sleep_interruptible.side_effect = wait
+        self.assertEqual(self.feature._try_run_with_lock(), "founders_due")
+        self.feature.get_screen.assert_called_once()
+        self.assertEqual(self.state.lootbug_bonus_count, 0)
+        self.assertFalse(self.state.ingame_action_lock.locked())
+
+    def test_missing_buy_screens_and_failed_buy_taps_are_bounded_too(self):
+        self.settings.LOOTBUG_BUY_MAX_ATTEMPTS = 2
+        with patch.object(self.feature, "_fresh_own_screen", return_value=None) as capture:
+            self.assertFalse(self.feature._buy_when_visible(.8))
+            self.assertEqual(capture.call_count, 2)
+        self.feature.find_template.return_value = dict(self.hit)
+        self.feature.tap.return_value = False
+        self.assertFalse(self.feature._buy_when_visible(.8))
+        self.assertEqual(self.feature.tap.call_count, 2)
+        self.assertEqual(self.state.lootbug_bonus_count, 0)
+
+    def test_pending_founders_followup_has_priority_even_with_later_deadline(self):
+        self.state.founders_followup_pending = True
+        self.assertEqual(self.feature._try_run_with_lock(), "founders_due")
+        self.feature.get_cached_screen.assert_not_called()
+
+    def test_zero_lookahead_still_yields_to_overdue_checks(self):
+        self.settings.LOOTBUG_FOUNDERS_LOOKAHEAD_S = 0
+        self.state.founders_next_check_ts = 101
+        self.assertFalse(self.feature._founders_due())
+        self.state.founders_next_check_ts = 100
+        self.assertTrue(self.feature._founders_due())
+
     def test_missing_shared_cache_captures_only_own_slot(self):
         self.feature.get_cached_screen.return_value = (None, 0, 0)
         self.feature._get_screen_for_scan()
@@ -167,7 +239,7 @@ class LootbugTests(unittest.TestCase):
         rng.assert_called_once_with(-15.0, 15.0)
 
     def test_busy_and_no_game_retries_do_not_randomize(self):
-        for result, expected in (("busy", 15.0), ("no_game", 30.0)):
+        for result, expected in (("busy", 15.0), ("no_game", 30.0), ("founders_due", 1.0)):
             with self.subTest(result=result):
                 self.feature._stop_evt.clear()
                 sleeps = []
@@ -233,7 +305,8 @@ class LootbugMigrationTests(unittest.TestCase):
             "LOOTBUG_BONUS_BUY_ROI": [310, 370, 505, 672],
         })
         self.assertEqual(result["startup_defaults"], {"lootbug_enabled": True})
-        self.assertEqual(result["founders"], old["founders"])
+        self.assertEqual(result["founders"], {"FOUNDERS_CHECK_INTERVAL_S_FIRST": 90})
+        self.assertEqual(old["founders"], {"FOUNDERS_CHECK_INTERVAL_S": 90})
         self.assertEqual(normalize_user_settings(result), result)
         settings = {}
         apply_overrides_to_settings(settings, old)

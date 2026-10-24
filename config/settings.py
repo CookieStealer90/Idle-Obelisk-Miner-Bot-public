@@ -73,6 +73,8 @@ LOG_BACKUP_COUNT = 3
 # ========= Tap =========
 TAP_JITTER_PX = 4   # default +/- pixel jitter for tap()
 TAP_HOLD_MS = 100   # press duration; 0 = use plain `input tap` (often ignored by games)
+TAP_HUMANIZE_ENABLED = True  # vary default hold duration; explicit workflow holds stay exact
+TAP_HOLD_VARIANCE_PCT = 30.0  # bounded +/- duration variation, concentrated near TAP_HOLD_MS
 
 # ========= Game-running detection (game_state.py) =========
 RUNNING_TEMPLATE = "game_running.png"
@@ -87,7 +89,8 @@ RUNNING_LOG_LEVEL = "TXT"
 
 # ========= Freebies feature =========
 FREEBIES_ENABLED_DEFAULT = False
-FREEBIES_CHECK_INTERVAL_S = 300.0  # 5 min between cycles
+FREEBIES_CHECK_INTERVAL_S_FIRST = 300.0  # startup/activation until first detection
+FREEBIES_CHECK_INTERVAL_S_SLOW = 2700.0  # 45 min after first detection
 
 FREEBIES_FULL_TEMPLATE = "freebie/freebie_full.png"
 FREEBIES_FULL2_TEMPLATE = "freebie/freebie_full2.png"
@@ -141,6 +144,8 @@ LOOTBUG_BONUS_BUY_TEMPLATE = "Lootbug/lootbug_buy_bonus.png"
 LOOTBUG_BONUS_BUY_ROI = (310, 370, 505, 672)
 LOOTBUG_BONUS_TAP_JITTER_PX = 4
 LOOTBUG_BUY_RETRY_S = 3.0             # fresh screenshot retry while Buy is obscured
+LOOTBUG_BUY_MAX_ATTEMPTS = 5          # release the action lock after exhausted Buy attempts
+LOOTBUG_FOUNDERS_LOOKAHEAD_S = 5.0    # yield to enabled Founders when due within this window
 
 # Per-event log levels — set to FULL while testing, lower later.
 LOOTBUG_LOG_LEVEL = "TXT"             # general worker / scan messages
@@ -151,8 +156,10 @@ LOOTBUG_LOG_LEVEL_BONUS = "FULL"       # bonus-purchase events
 
 # ========= Founders feature (independent of Lootbug) =========
 FOUNDERS_ENABLED = False             # startup default; runtime toggle is separate
-FOUNDERS_CHECK_INTERVAL_S = 180.0
+FOUNDERS_CHECK_INTERVAL_S_FIRST = 180.0  # startup/activation until first detection
+FOUNDERS_CHECK_INTERVAL_S_SLOW = 3000.0  # after first detection, until reactivation
 FOUNDERS_BUSY_RETRY_S = 15.0
+FOUNDERS_MAX_CLAIMS_PER_CYCLE = 3     # fresh recheck after every successful tap
 FOUNDERS_DETECT_ROI = (110, 201, 753, 1021)
 FOUNDERS_TEMPLATE = "Founders/founders_bundle_tpl.png"
 FOUNDERS_MATCH_THRESHOLD = 0.8

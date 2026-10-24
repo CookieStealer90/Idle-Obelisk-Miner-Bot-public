@@ -154,6 +154,8 @@ class WorkflowScreenshotTests(unittest.TestCase):
 class ConsumerSlotTests(unittest.TestCase):
     def setUp(self):
         self.settings = types.ModuleType("config.settings")
+        self.settings.FREEBIES_CHECK_INTERVAL_S_FIRST = 300
+        self.settings.FREEBIES_CHECK_INTERVAL_S_SLOW = 2700
         state = types.ModuleType("config.app_state")
         self.cache = types.ModuleType("core.screen_cache")
         self.cache.get_screen = Mock(return_value=(None, 0, 0))

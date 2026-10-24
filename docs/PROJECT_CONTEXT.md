@@ -50,12 +50,31 @@ lazy imports to avoid circular imports. Level detection writes
 - **Freebies:** periodic detection using two icon templates, menu opening,
   scrolling to find the claim button, claiming, counting and closing the menu.
   Enabling wakes the worker for a prompt cycle.
+  Startup and each runtime activation use `FREEBIES_CHECK_INTERVAL_S_FIRST`
+  (default 300 seconds) until either available-icon template is detected.
+  The first detection immediately selects `FREEBIES_CHECK_INTERVAL_S_SLOW`
+  (default 2700 seconds / 45 minutes), even if the subsequent claim fails.
+  Missing screenshots and misses do not change the phase; later misses retain
+  SLOW. Restart or reactivation resets to FIRST. The countdown uses the chosen
+  delay; game-absent retries remain capped at 30 seconds. Freebies still waits
+  for the shared action lock. Logs show startup intervals, FIRST on activation,
+  the first detection's SLOW transition, action-lock waits and next-check delay,
+  mode and reason (`ok`, `no_game`), routed via `FREEBIES_LOG_LEVEL` (default
+  TXT, file only). Claim accounting and statistics activation are unchanged.
+  Both intervals are editable in the WebUI and require a process restart.
+  Legacy `FREEBIES_CHECK_INTERVAL_S` migrates to FIRST, explicit new values win,
+  and SLOW uses its default when absent. Migration does not modify files until
+  settings are saved.
 - **Lootbugs:** detect `lootbug_tpl_*.png`, click, wait and capture a fresh
   screenshot; then find `Lootbug/lootbug_buy_bonus.png` within
   `LOOTBUG_BONUS_BUY_ROI` and click once at the match center. Buy ROI:
   `(310, 370, 505, 672)`. If notifications obscure the Buy box, retry with fresh
-  screenshots every `LOOTBUG_BUY_RETRY_S` (default 3 seconds) until Buy succeeds
-  or Lootbug is disabled. The action lock stays held during retries. There is
+  screenshots every `LOOTBUG_BUY_RETRY_S` (default 3 seconds), up to
+  `LOOTBUG_BUY_MAX_ATTEMPTS` (default 5; integer 1-100). Missing screenshots
+  and failed Buy taps also consume attempts. Exhaustion aborts this cycle and
+  releases the action lock; the next regular scan uses the normal interval.
+  Disabling/stopping or an enabled Founders check becoming due aborts early.
+  The action lock stays held only during this bounded search. There is
   no automatic closing; obsolete close settings are removed.
   The switch is ON/OFF only; the bot no longer selects bonuses or double-clicks.
   Regular scan intervals use `LOOTBUG_INTERVAL_VARIANCE_PCT` (default +/-15%,
@@ -63,6 +82,14 @@ lazy imports to avoid circular imports. Level detection writes
   one delay and publishes the same target time as `lootbug_next_check_ts`; the
   status countdown derives from it. Busy, game-absent and Buy retries retain
   their separate delays without this variance.
+  Enabled Founders checks due within `LOOTBUG_FOUNDERS_LOOKAHEAD_S` (default
+  5 seconds), overdue/uninitialized checks and pending Founders follow-ups
+  take priority. Lootbug yields without holding the action lock, retrying its
+  scheduling check after at most one second without interval variance. The
+  priority is rechecked after acquiring the lock and during Buy retries.
+  A zero lookahead still yields to due/pending checks; disabled Founders does
+  not block Lootbug. Attempt numbers, exhausted attempts and priority yields
+  are logged. Both new settings are configurable in the WebUI.
   With the feature disabled, select the desired bonuses in the game and confirm
   with Buy; the game remembers the selection. Enable **Remove lootbug gem
   confirmation** in the game settings. Old bonus-selection settings are removed
@@ -73,8 +100,17 @@ lazy imports to avoid circular imports. Level detection writes
   (`founders`, `FOUNDERS_*`) provides separate scan interval, detection and click
   settings. Independent of the Lootbug switch; both still share
   `state.ingame_action_lock`.
-  Flow: detect `Founders/founders_bundle_tpl.png` and click once; no popup,
-  post-click wait or closing logic. Its template resides in `images/Founders/`,
+  Flow: detect `Founders/founders_bundle_tpl.png` and click once; immediately
+  force a fresh screenshot in `founders_scr` after every successful tap and
+  handle any further bundle under the same action lock. No shared cached frame
+  is used for follow-ups and there is no post-click sleep or closing logic.
+  `FOUNDERS_MAX_CLAIMS_PER_CYCLE` (default 3; integer 1-100) caps each chain;
+  even its final tap gets a fresh recheck. If a detected bundle tap fails,
+  a bundle remains or that fresh capture fails, release the lock and schedule a short retry capped by
+  `FOUNDERS_BUSY_RETRY_S`; Lootbug continues yielding to the pending follow-up.
+  Failed taps never count or start another immediate recheck. Disable, stop
+  and reactivation stop the current chain at execution boundaries. The cap is
+  editable in the WebUI. Its template resides in `images/Founders/`,
   so Lootbug image changes do not affect Founders.
   Legacy `lootbug_founders` settings migrate to `founders` on load/API access;
   previously inherited Lootbug overrides are copied, and explicit Founders
@@ -83,6 +119,20 @@ lazy imports to avoid circular imports. Level detection writes
   `FOUNDERS_ENABLED` belongs to **Startup Defaults** (`startup_defaults`) and
   controls the initial value; the dashboard switch only changes
   `state.founders_enabled` at runtime.
+  Startup and each runtime activation use `FOUNDERS_CHECK_INTERVAL_S_FIRST`
+  (default 180 seconds) until the first template detection. That detection
+  immediately selects `FOUNDERS_CHECK_INTERVAL_S_SLOW` (default 3000 seconds),
+  including when the tap fails; failed taps still do not increase counters.
+  Later misses retain slow mode. Restarting or disabling and enabling resets
+  the phase and activation wakes the worker for a prompt scan. Busy/game-absent
+  retries keep their shorter delays. Both intervals are editable in the WebUI
+  and require a process restart. Legacy `FOUNDERS_CHECK_INTERVAL_S` migrates
+  to FIRST; explicit new values win and SLOW uses its default when absent.
+  Logs show startup interval values, FIRST on reactivation, the first detection's
+  switch to SLOW, and each next-check delay with mode and scheduling reason
+  (`ok`, `busy`, `no_game`, `pending`), fresh rechecks and chain limits.
+  These use the configured Founders log routing;
+  busy scheduling uses `FOUNDERS_LOG_LEVEL_BUSY`.
 - **Level detection:** periodic scan, digit assembly for levels 1-999, filtering
   of horizontally overlapping matches, display and manual scan. Templates for
   digits 0-9 exist in the inspected files.
@@ -153,14 +203,30 @@ the available flow, not its current reliability in the game.
 These points are supported by code or documentation; further historical
 rationale is not documented:
 
-- Project code, comments, logs, UI text, tests and documentation must be in
-  English. Chat replies may follow the user's language.
+- Communicate with the user in German. Use English throughout the project
+  directory and all project content, including file and directory names, code,
+  comments, logs, UI text, tests, documentation and working instructions
+  (`AGENTS.md`). German requests do not change this policy unless the user
+  explicitly requests an exception. Check added or edited content before
+  completing a change.
 - Central settings and reusable ADB/image/input helpers are preferred over
   scattered feature configuration.
 - ROIs use `(x1, y1, x2, y2)` in screen pixels. Templates, game language and
   coordinates belong together; the README requires the game to use English.
 - Clicks normally use a zero-distance swipe to control hold duration.
   `hold_ms=0` uses a normal tap. Scrolling uses drag gestures with speed presets.
+  Default tap holds now use bounded triangular duration variation (enabled by
+  default: 100 ms +/-30%, concentrating values near 100 ms). The WebUI's
+  **Humanized Taps** section (`tapping`) exposes the switch, base duration,
+  variation and global position jitter. Explicit workflow `hold_ms` values
+  remain exact, including zero; a zero global base disables duration variation.
+  Feature/step-specific position jitter still takes precedence. Settings require
+  a process restart; old configuration files need no migration. No extra waits
+  or gesture-path changes are introduced. Detection avoidance is not verified.
+  `tests/test_tapper.py` covers duration/position bounds, exact explicit holds,
+  disabled variation, plain taps, ADB failures and API/configuration round trips
+  without game access. The dashboard editor tests cover rendering and saving
+  the new controls. Real-game registration of the varied holds is unverified.
 - Feature workers are daemon threads. Game actions normally coordinate through
   `state.ingame_action_lock`; pure detection does not need this lock. Freebies
   waits for it; Lootbugs and Workflows postpone if it is busy.
@@ -228,6 +294,8 @@ Settings, logging and verification details: [Screenshots](SCREENSHOTS.md).
   format, reload behavior and dashboard state together. For feature changes,
   consider locks, screenshot age and menu/popup state.
 - Targeted Founders regression tests: `tests/test_founders.py`.
+  Freebie phase scheduling, logs, reactivation, migration and configuration API
+  regressions: `tests/test_freebies.py`; editor controls: `tests/test_dashboard_editors.cjs`.
   Run `python -B -m unittest discover -s tests -v`. Tests cover migration,
   configuration API, independent activation, exactly one click without a popup,
   and locking/timing with simulated game access. There is no complete end-to-end

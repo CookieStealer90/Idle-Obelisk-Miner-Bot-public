@@ -13,8 +13,8 @@ Flow:
     5. Match LOOTBUG_TEMPLATE inside LOOTBUG_DETECT_ROI. No hit -> done.
     6. Tap the matched lootbug (jitter), wait LOOTBUG_POST_CLICK_DELAY_S,
        then find lootbug_buy_bonus.png inside LOOTBUG_BONUS_BUY_ROI and
-       click it once. If obscured, retry with fresh screenshots until found
-       or the feature is disabled. Never click Close.
+       click it once. Retry with fresh screenshots up to BUY_MAX_ATTEMPTS,
+       yielding early when Founders is due. Never click Close.
 
 The worker runs in its own daemon thread, gated by `state.lootbug_enabled`
 (toggleable via WebUI).
@@ -113,9 +113,27 @@ def _click(cx: int, cy: int, what: str):
     return ok
 
 
+def _founders_due() -> bool:
+    if not getattr(state, "founders_enabled", False):
+        return False
+    if getattr(state, "founders_followup_pending", False):
+        return True
+    deadline = float(getattr(state, "founders_next_check_ts", 0.0))
+    lookahead = float(getattr(s, "LOOTBUG_FOUNDERS_LOOKAHEAD_S", 5.0))
+    return deadline <= time.time() + lookahead
+
+
 def _buy_when_visible(thr: float) -> bool:
-    """Wait out notifications while retaining the caller's action lock."""
-    while state.lootbug_enabled and not _stop_evt.is_set():
+    """Bound Buy retries while retaining the caller's action lock."""
+    limit = int(getattr(s, "LOOTBUG_BUY_MAX_ATTEMPTS", 5))
+    for attempt in range(1, limit + 1):
+        if not state.lootbug_enabled or _stop_evt.is_set():
+            return False
+        if _founders_due():
+            _log("[LOOTBUG] Founders check due -> aborting Buy search and releasing action lock",
+                 "LOOTBUG_LOG_LEVEL_BONUS")
+            return False
+        _log(f"[LOOTBUG] buy attempt {attempt}/{limit}", "LOOTBUG_LOG_LEVEL_BONUS")
         popup_img = _fresh_own_screen()
         if popup_img is not None:
             bm = find_template(popup_img, s.LOOTBUG_BONUS_BUY_TEMPLATE,
@@ -123,7 +141,8 @@ def _buy_when_visible(thr: float) -> bool:
             if bm["found"]:
                 jitter = int(s.LOOTBUG_BONUS_TAP_JITTER_PX)
                 _log(f"[LOOTBUG] buy box detected (score={bm['score']:.3f}) "
-                     f"-> single tap at ({bm['cx']},{bm['cy']})",
+                     f"-> single tap near target center ({bm['cx']},{bm['cy']}); "
+                     f"position jitter +/-{jitter}px per axis applied by tapper",
                      "LOOTBUG_LOG_LEVEL_BONUS")
                 if not state.lootbug_enabled or _stop_evt.is_set():
                     return False
@@ -136,6 +155,11 @@ def _buy_when_visible(thr: float) -> bool:
                      "LOOTBUG_LOG_LEVEL_BONUS")
         else:
             _log("[LOOTBUG] no buy screenshot -> retrying", "LOOTBUG_LOG_LEVEL_BONUS")
+        if attempt == limit:
+            _log(f"[LOOTBUG] Buy search exhausted after {limit} attempts -> "
+                 "giving up this cycle and releasing action lock (no Close tap)",
+                 "LOOTBUG_LOG_LEVEL_BONUS")
+            return False
         delay = max(0.1, float(s.LOOTBUG_BUY_RETRY_S))
         state.lootbug_next_check_ts = time.time() + delay
         _sleep_interruptible(delay)
@@ -169,7 +193,7 @@ def _run_scan_cycle() -> bool:
         state.lootbug_last_click_ts = time.time()
         lootbug_clicked = True
 
-        # Keep the action lock until Buy succeeds or Lootbug is disabled.
+        # Keep the action lock only for this bounded Buy search.
         _sleep_interruptible(float(s.LOOTBUG_POST_CLICK_DELAY_S))
         _buy_when_visible(thr)
 
@@ -178,8 +202,12 @@ def _run_scan_cycle() -> bool:
 
 def _try_run_with_lock() -> str:
     """Acquire the action lock and run a cycle.
-    Returns: "ok" | "busy" | "no_game"
+    Returns: "ok" | "busy" | "no_game" | "founders_due"
     """
+    if _founders_due():
+        _log("[LOOTBUG] Founders check due soon/pending -> waiting without action lock",
+             "LOOTBUG_LOG_LEVEL_BUSY")
+        return "founders_due"
     if not is_game_running():
         _log("[LOOTBUG] game not running -> skipping tick")
         return "no_game"
@@ -188,17 +216,19 @@ def _try_run_with_lock() -> str:
     if lock is None:
         # No lock available — just run.
         _run_scan_cycle()
-        return "ok"
+        return "founders_due" if _founders_due() else "ok"
 
     if not lock.acquire(blocking=False):
         _log("[LOOTBUG] another feature is busy -> postponing",
              "LOOTBUG_LOG_LEVEL_BUSY")
         return "busy"
     try:
+        if _founders_due():
+            return "founders_due"
         _run_scan_cycle()
     finally:
         lock.release()
-    return "ok"
+    return "founders_due" if _founders_due() else "ok"
 
 
 def _next_scan_delay(interval: float) -> float:
@@ -227,7 +257,9 @@ def _worker():
             if not state.lootbug_enabled:
                 state.lootbug_next_check_ts = 0.0
                 continue
-            if result == "busy":
+            if result == "founders_due":
+                wait = min(1.0, interval)
+            elif result == "busy":
                 wait = min(busy_retry, interval)
             elif result == "no_game":
                 wait = min(30.0, interval)

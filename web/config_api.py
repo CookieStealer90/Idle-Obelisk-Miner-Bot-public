@@ -32,6 +32,12 @@ def settings_get():
 
         from config import settings as s
         defaults = {
+            "tapping": {
+                "TAP_HUMANIZE_ENABLED": s.TAP_HUMANIZE_ENABLED,
+                "TAP_HOLD_MS": s.TAP_HOLD_MS,
+                "TAP_HOLD_VARIANCE_PCT": s.TAP_HOLD_VARIANCE_PCT,
+                "TAP_JITTER_PX": s.TAP_JITTER_PX,
+            },
             "adb": {
                 "DEVICE": s.DEVICE,
                 "ADB_AUTO_CONNECT": s.ADB_AUTO_CONNECT,
@@ -73,7 +79,8 @@ def settings_get():
                 "RUNNING_LOG_LEVEL": s.RUNNING_LOG_LEVEL,
             },
             "freebies": {
-                "FREEBIES_CHECK_INTERVAL_S": s.FREEBIES_CHECK_INTERVAL_S,
+                "FREEBIES_CHECK_INTERVAL_S_FIRST": s.FREEBIES_CHECK_INTERVAL_S_FIRST,
+                "FREEBIES_CHECK_INTERVAL_S_SLOW": s.FREEBIES_CHECK_INTERVAL_S_SLOW,
                 "FREEBIES_DETECT_ROI": list(s.FREEBIES_DETECT_ROI),
                 "FREEBIES_CLAIM_ROI": list(s.FREEBIES_CLAIM_ROI),
                 "FREEBIES_MATCH_THRESHOLD": s.FREEBIES_MATCH_THRESHOLD,
@@ -88,8 +95,10 @@ def settings_get():
                 "FREEBIES_POST_CLAIM_DELAY_S": s.FREEBIES_POST_CLAIM_DELAY_S,
             },
             "founders": {
-                "FOUNDERS_CHECK_INTERVAL_S": s.FOUNDERS_CHECK_INTERVAL_S,
+                "FOUNDERS_CHECK_INTERVAL_S_FIRST": s.FOUNDERS_CHECK_INTERVAL_S_FIRST,
+                "FOUNDERS_CHECK_INTERVAL_S_SLOW": s.FOUNDERS_CHECK_INTERVAL_S_SLOW,
                 "FOUNDERS_BUSY_RETRY_S": s.FOUNDERS_BUSY_RETRY_S,
+                "FOUNDERS_MAX_CLAIMS_PER_CYCLE": s.FOUNDERS_MAX_CLAIMS_PER_CYCLE,
                 "FOUNDERS_DETECT_ROI": list(s.FOUNDERS_DETECT_ROI),
                 "FOUNDERS_TEMPLATE": s.FOUNDERS_TEMPLATE,
                 "FOUNDERS_MATCH_THRESHOLD": s.FOUNDERS_MATCH_THRESHOLD,
@@ -109,6 +118,8 @@ def settings_get():
                 "LOOTBUG_TAP_JITTER_PX": s.LOOTBUG_TAP_JITTER_PX,
                 "LOOTBUG_POST_CLICK_DELAY_S": s.LOOTBUG_POST_CLICK_DELAY_S,
                 "LOOTBUG_BUY_RETRY_S": s.LOOTBUG_BUY_RETRY_S,
+                "LOOTBUG_BUY_MAX_ATTEMPTS": s.LOOTBUG_BUY_MAX_ATTEMPTS,
+                "LOOTBUG_FOUNDERS_LOOKAHEAD_S": s.LOOTBUG_FOUNDERS_LOOKAHEAD_S,
                 "LOOTBUG_BONUS_BUY_TEMPLATE": s.LOOTBUG_BONUS_BUY_TEMPLATE,
                 "LOOTBUG_BONUS_BUY_ROI": list(s.LOOTBUG_BONUS_BUY_ROI),
                 "LOOTBUG_BONUS_TAP_JITTER_PX": getattr(s, "LOOTBUG_BONUS_TAP_JITTER_PX", 4),

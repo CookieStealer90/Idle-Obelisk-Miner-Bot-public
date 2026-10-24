@@ -2,7 +2,8 @@
 """Detect and click Founders lootboxes on an independent schedule.
 
 Uses the shared ingame action lock, but no Lootbug runtime state or settings.
-The Founders template is clicked once; no popup handling is needed.
+Each detected Founders bundle is clicked once, then a fresh frame is checked
+for another bundle. Claim chains are bounded; no popup handling is needed.
 """
 import threading
 import time
@@ -20,6 +21,14 @@ _thread = None
 _thread_started = False
 _stop_evt = threading.Event()
 _wake_evt = threading.Event()   # set to make the worker run a cycle ASAP
+_activation_generation = 0
+_detected_generation = None
+
+
+def _check_interval() -> float:
+    if _detected_generation == _activation_generation:
+        return float(s.FOUNDERS_CHECK_INTERVAL_S_SLOW)
+    return float(s.FOUNDERS_CHECK_INTERVAL_S_FIRST)
 
 
 def _log(msg: str, level_attr: str = "FOUNDERS_LOG_LEVEL"):
@@ -50,24 +59,43 @@ def _click(cx: int, cy: int, what: str):
     return ok
 
 
-def _run_scan_cycle() -> bool:
-    """Check for the founders lootbox and tap it if present. Returns True if clicked."""
-    img = _get_screen_for_scan()
+def _find_bundle(force_fresh=False):
+    if force_fresh:
+        img, _, _ = get_screen("founders_scr", max_age=0.0, force=True)
+    else:
+        img = _get_screen_for_scan()
     if img is None:
         _log("[FOUNDERS] no screenshot -> skipping cycle")
+        return None
+    return find_template(img, getattr(s, "FOUNDERS_TEMPLATE", "Founders/founders_bundle_tpl.png"),
+                         roi=tuple(getattr(s, "FOUNDERS_DETECT_ROI", (110, 201, 753, 1021))),
+                         threshold=float(s.FOUNDERS_MATCH_THRESHOLD))
+
+
+def _run_scan_cycle(match=None) -> bool:
+    """Check for the founders lootbox and tap it if present. Returns True if clicked."""
+    global _detected_generation
+    generation = _activation_generation
+    m = _find_bundle() if match is None else match
+    if m is None:
         return False
-    thr = float(s.FOUNDERS_MATCH_THRESHOLD)
-    roi = tuple(getattr(s, "FOUNDERS_DETECT_ROI", (110, 201, 753, 1021)))
-    tpl = getattr(s, "FOUNDERS_TEMPLATE", "Founders/founders_bundle_tpl.png")
-    m = find_template(img, tpl, roi=roi, threshold=thr)
     if not m["found"]:
         _log(f"[FOUNDERS] founders: not present (score={m['score']:.3f})",
              "FOUNDERS_LOG_LEVEL")
         return False
 
+    # A scan started before reactivation must not switch the new session to slow mode.
+    first_detection = _detected_generation != generation
+    _detected_generation = generation
+    if first_detection and generation == _activation_generation:
+        _log(f"[FOUNDERS] first bundle detected -> mode=SLOW "
+             f"(interval={_check_interval():g}s)")
     _log(f"[FOUNDERS] founders lootbox detected (score={m['score']:.3f}) -> clicking",
          "FOUNDERS_LOG_LEVEL")
+    if generation == _activation_generation:
+        state.founders_followup_pending = True
     if not _click(m["cx"], m["cy"], "founders-lootbox"):
+        _log("[FOUNDERS] detected bundle tap failed -> short retry")
         return False
     state.founders_clicked_count += 1
     state.founders_last_click_ts = time.time()
@@ -75,9 +103,37 @@ def _run_scan_cycle() -> bool:
     return True
 
 
+def _run_claim_chain():
+    """Caller owns the action lock; every sent tap gets a fresh follow-up scan."""
+    state.founders_followup_pending = False
+    generation = _activation_generation
+    limit = int(getattr(s, "FOUNDERS_MAX_CLAIMS_PER_CYCLE", 3))
+    match = None
+    for claimed in range(limit):
+        if not state.founders_enabled or _stop_evt.is_set() or generation != _activation_generation:
+            return
+        if not _run_scan_cycle(match):
+            return
+        _log(f"[FOUNDERS] tap sent ({claimed + 1}/{limit}) -> checking fresh screen for another bundle")
+        match = _find_bundle(force_fresh=True)
+        if not state.founders_enabled or generation != _activation_generation or _stop_evt.is_set():
+            return
+        if match is None:
+            state.founders_followup_pending = True
+            _log("[FOUNDERS] follow-up screenshot unavailable -> short retry")
+            return
+        if not match["found"]:
+            state.founders_followup_pending = False
+            _log("[FOUNDERS] fresh recheck: no further bundle")
+            return
+    state.founders_followup_pending = True
+    _log(f"[FOUNDERS] claim limit reached ({limit}); another bundle detected -> "
+         "releasing action lock and scheduling short retry")
+
+
 def _try_run_with_lock() -> str:
     """Acquire the action lock and run a cycle.
-    Returns: "ok" | "busy" | "no_game"
+    Returns: "ok" | "busy" | "no_game" | "pending"
     """
     if not is_game_running():
         _log("[FOUNDERS] game not running -> skipping tick")
@@ -86,26 +142,28 @@ def _try_run_with_lock() -> str:
     lock = getattr(state, "ingame_action_lock", None)
     if lock is None:
         # No lock available — just run.
-        _run_scan_cycle()
-        return "ok"
+        _run_claim_chain()
+        return "pending" if state.founders_followup_pending else "ok"
 
     if not lock.acquire(blocking=False):
         _log("[FOUNDERS] another feature is busy -> postponing",
              "FOUNDERS_LOG_LEVEL_BUSY")
         return "busy"
     try:
-        _run_scan_cycle()
+        _run_claim_chain()
     finally:
         lock.release()
-    return "ok"
+    return "pending" if state.founders_followup_pending else "ok"
 
 
 def _worker():
-    _log("[FOUNDERS] worker thread started")
+    _log(f"[FOUNDERS] worker thread started (enabled={state.founders_enabled}, "
+         f"mode=FIRST, FIRST={s.FOUNDERS_CHECK_INTERVAL_S_FIRST:g}s, "
+         f"SLOW={s.FOUNDERS_CHECK_INTERVAL_S_SLOW:g}s)")
     _sleep_interruptible(3.0)
     while not _stop_evt.is_set():
         try:
-            interval = float(getattr(s, "FOUNDERS_CHECK_INTERVAL_S", 180.0))
+            interval = _check_interval()
             busy_retry = float(getattr(s, "FOUNDERS_BUSY_RETRY_S", 15.0))
 
             if not getattr(state, "founders_enabled", False):
@@ -116,14 +174,19 @@ def _worker():
                 continue
 
             result = _try_run_with_lock()
-            if result == "busy":
+            interval = _check_interval()
+            if result in ("busy", "pending"):
                 wait = min(busy_retry, interval)
             elif result == "no_game":
                 wait = min(30.0, interval)
             else:
                 wait = interval
 
-            state.founders_next_check_ts = time.time() + wait
+            state.founders_next_check_ts = time.time() + wait if state.founders_enabled else 0.0
+            if state.founders_enabled:
+                mode = "SLOW" if _detected_generation == _activation_generation else "FIRST"
+                _log(f"[FOUNDERS] next check in {wait:g}s (mode={mode}, reason={result})",
+                     "FOUNDERS_LOG_LEVEL_BUSY" if result == "busy" else "FOUNDERS_LOG_LEVEL")
             _sleep_interruptible(wait)
         except Exception as e:
             _log(f"[FOUNDERS] worker error: {type(e).__name__}: {e}")
@@ -137,10 +200,12 @@ def _sleep_interruptible(seconds: float):
 
 def start():
     """Start the background worker (idempotent)."""
-    global _thread, _thread_started
+    global _thread, _thread_started, _detected_generation
     if _thread_started:
         return
     _thread_started = True
+    _detected_generation = None
+    state.founders_followup_pending = False
     _stop_evt.clear()
     _thread = threading.Thread(target=_worker, daemon=True, name="founders-worker")
     _thread.start()
@@ -148,9 +213,16 @@ def start():
 
 def toggle() -> bool:
     """Toggle Founders independently and wake the worker when enabled."""
+    global _activation_generation
     state.founders_enabled = not state.founders_enabled
     state.founders_next_check_ts = 0.0
+    state.founders_followup_pending = False
     if state.founders_enabled:
-        _wake_evt.set()
-    _log(f"[FOUNDERS] toggled -> {'ON' if state.founders_enabled else 'OFF'}")
+        _activation_generation += 1
+    _wake_evt.set()
+    if state.founders_enabled:
+        _log(f"[FOUNDERS] toggled -> ON (mode=FIRST, "
+             f"interval={s.FOUNDERS_CHECK_INTERVAL_S_FIRST:g}s; checking now)")
+    else:
+        _log("[FOUNDERS] toggled -> OFF")
     return state.founders_enabled

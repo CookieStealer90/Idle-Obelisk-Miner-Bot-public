@@ -4,7 +4,7 @@ Periodically checks whether a freebie is claimable and clicks through the
 claim flow.
 
 Flow (see README / chat spec):
-    1. Wait `FREEBIES_CHECK_INTERVAL_S` seconds.
+    1. Use FIRST until the first detection, then SLOW until restart/reactivation.
     2. Verify game is running. If not, skip this tick.
     3. Pull a fresh screenshot into temp/freebie_scr.png.
     4. Match `freebie_full.png` inside FREEBIES_DETECT_ROI on the base screen.
@@ -38,6 +38,14 @@ _thread = None
 _thread_started = False
 _stop_evt = threading.Event()
 _wake_evt = threading.Event()   # set to make the worker run a cycle ASAP
+_activation_generation = 0
+_detected_generation = None
+
+
+def _check_interval() -> float:
+    if _detected_generation == _activation_generation:
+        return float(s.FREEBIES_CHECK_INTERVAL_S_SLOW)
+    return float(s.FREEBIES_CHECK_INTERVAL_S_FIRST)
 
 
 def _log(msg: str):
@@ -88,6 +96,8 @@ def _run_claim_cycle() -> bool:
     """Full flow: detect button on base screen, open menu, find+tap claim.
     Returns True on full success.
     """
+    global _detected_generation
+    generation = _activation_generation
     # Step 1: Detect base button
     base_img = _fresh_screen()
     if base_img is None:
@@ -110,6 +120,12 @@ def _run_claim_cycle() -> bool:
             _log(f"[FREEBIES] nothing to claim (full={m['score']:.3f} full2={m2['score']:.3f} thr={thr})")
             return False
 
+    # A detection from before reactivation must not switch the new session.
+    first_detection = _detected_generation != generation
+    _detected_generation = generation
+    if first_detection and generation == _activation_generation:
+        _log(f"[FREEBIES] first freebie detected -> mode=SLOW "
+             f"(interval={_check_interval():g}s)")
     _log(f"[FREEBIES] freebie available ({which} score={m['score']:.3f}) -> opening menu")
     if not _click_with_log(m["cx"], m["cy"], "freebie-icon"):
         return False
@@ -178,12 +194,14 @@ def _run_claim_cycle() -> bool:
 
 
 def _worker():
-    _log("[FREEBIES] worker thread started")
+    _log(f"[FREEBIES] worker thread started (enabled={state.freebies_enabled}, "
+         f"mode=FIRST, FIRST={s.FREEBIES_CHECK_INTERVAL_S_FIRST:g}s, "
+         f"SLOW={s.FREEBIES_CHECK_INTERVAL_S_SLOW:g}s)")
     # Small initial delay so ADB + game_state get a head start (wake-able)
     _sleep_interruptible(3.0)
     while not _stop_evt.is_set():
         try:
-            interval = float(getattr(s, "FREEBIES_CHECK_INTERVAL_S", 300.0))
+            interval = _check_interval()
             if not getattr(state, "freebies_enabled", True):
                 state.freebies_next_check_ts = 0.0  # disabled -> no cooldown shown
                 # Use interruptible sleep so a toggle-ON wake doesn't get
@@ -194,22 +212,31 @@ def _worker():
             if not is_game_running():
                 _log("[FREEBIES] game not running -> skipping tick")
                 wait = min(30.0, interval)
-                state.freebies_next_check_ts = time.time() + wait
-                _sleep_interruptible(wait)
+                _wait_for_next_check(wait, "no_game")
                 continue
 
             lock = getattr(state, "ingame_action_lock", None)
             if lock is not None:
                 # Block — freebies cycles are infrequent, waiting is fine.
+                if lock.locked():
+                    _log("[FREEBIES] another feature is busy -> waiting for action lock")
                 with lock:
-                    _run_claim_cycle()
+                    if state.freebies_enabled:
+                        _run_claim_cycle()
             else:
                 _run_claim_cycle()
-            state.freebies_next_check_ts = time.time() + interval
-            _sleep_interruptible(interval)
+            _wait_for_next_check(_check_interval(), "ok")
         except Exception as e:
             _log(f"[FREEBIES] worker error: {type(e).__name__}: {e}")
             time.sleep(5.0)
+
+
+def _wait_for_next_check(wait: float, reason: str):
+    state.freebies_next_check_ts = time.time() + wait if state.freebies_enabled else 0.0
+    if state.freebies_enabled:
+        mode = "SLOW" if _detected_generation == _activation_generation else "FIRST"
+        _log(f"[FREEBIES] next check in {wait:g}s (mode={mode}, reason={reason})")
+    _sleep_interruptible(wait)
 
 
 def _sleep_interruptible(seconds: float):
@@ -230,11 +257,12 @@ def _sync_statistics(active):
 
 def start():
     """Start the background worker (idempotent)."""
-    global _thread, _thread_started
+    global _thread, _thread_started, _detected_generation
     if _thread_started:
         return
     _sync_statistics(bool(getattr(state, "freebies_enabled", True)))
     _thread_started = True
+    _detected_generation = None
     _stop_evt.clear()
     _thread = threading.Thread(target=_worker, daemon=True, name="freebies-worker")
     _thread.start()
@@ -244,12 +272,17 @@ def toggle() -> bool:
     """Flip state.freebies_enabled. Returns the new value.
     On ON-transition the worker wakes immediately and runs a cycle — no
     waiting for the configured interval first."""
+    global _activation_generation
     new = not bool(getattr(state, "freebies_enabled", True))
     _sync_statistics(new)
     state.freebies_enabled = new
+    state.freebies_next_check_ts = 0.0
     if new:
-        # Wake the worker so it runs a cycle immediately instead of sleeping.
-        state.freebies_next_check_ts = 0.0
-        _wake_evt.set()
-    _log(f"[FREEBIES] toggled -> {'ON' if new else 'OFF'}")
+        _activation_generation += 1
+    _wake_evt.set()
+    if new:
+        _log(f"[FREEBIES] toggled -> ON (mode=FIRST, "
+             f"interval={s.FREEBIES_CHECK_INTERVAL_S_FIRST:g}s; checking now)")
+    else:
+        _log("[FREEBIES] toggled -> OFF")
     return new

@@ -66,6 +66,7 @@ founders_enabled = False
 founders_clicked_count = 0
 founders_last_click_ts = 0.0
 founders_next_check_ts = 0.0
+founders_followup_pending = False    # unresolved bundle or failed fresh follow-up needs a short retry
 
 # ========= Suppress Exceptions =========
 SUPPRESS_EXCEPTIONS = True
