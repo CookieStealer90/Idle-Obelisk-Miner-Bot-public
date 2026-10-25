@@ -111,11 +111,12 @@ class FreebieScheduleTests(unittest.TestCase):
         self.assertEqual(messages.count("[FREEBIES] first freebie detected -> mode=SLOW (interval=2700s)"), 1)
         self.assertIn("[FREEBIES] next check in 2700s (mode=SLOW, reason=ok)", messages)
 
-    def test_misses_and_missing_screenshots_keep_current_phase(self):
+    def test_icon_miss_resets_fast_but_missing_screenshots_keep_current_phase(self):
         self.feature.find_template.return_value = {"found": False, "score": .1}
         self.assertEqual(self.run_checks(), [3, 300])
         self.assertEqual(self.state.freebies_next_check_ts, 400)
         self.feature.tap.assert_not_called()
+        self.feature._stop_evt.clear()
         self.feature.get_screen.return_value = (None, 0, 0)
         self.assertFalse(self.feature._run_claim_cycle())
         self.assertEqual(self.feature._check_interval(), 300)
@@ -124,7 +125,52 @@ class FreebieScheduleTests(unittest.TestCase):
         self.assertEqual(self.feature._check_interval(), 2700)
         self.feature.get_screen.return_value = (object(), 900, 1600)
         self.assertFalse(self.feature._run_claim_cycle())
-        self.assertEqual(self.feature._check_interval(), 2700)
+        self.assertEqual(self.feature._check_interval(), 300)
+        self.assertIn("[FREEBIES] no freebie detected -> mode=FIRST (fast checks, interval=300s)",
+                      self.messages())
+
+    def test_worker_resumes_fast_checks_until_either_icon_is_detected_again(self):
+        miss = {"found": False, "score": .1}
+        # Claim, two scans missing both icons, then claim via the second icon.
+        self.feature.find_template.side_effect = [
+            self.hit, self.hit, self.hit, miss, miss, miss, miss,
+            miss, self.hit, self.hit, self.hit]
+        deadlines = []
+        sleeps = []
+
+        def sleep(seconds):
+            sleeps.append(seconds)
+            deadlines.append(self.state.freebies_next_check_ts)
+            if len(sleeps) == 5:
+                self.feature._stop_evt.set()
+
+        with patch.object(self.feature, "_sleep_interruptible", side_effect=sleep):
+            self.feature._worker()
+        self.assertEqual(sleeps, [3, 2700, 300, 300, 2700])
+        self.assertEqual(deadlines, [0, 2800, 400, 400, 2800])
+        self.assertEqual(self.state.freebies_claimed_count, 2)
+        self.assertFalse(self.state.ingame_action_lock.locked())
+        self.assertEqual(self.messages().count(
+            "[FREEBIES] no freebie detected -> mode=FIRST (fast checks, interval=300s)"), 1)
+
+    def test_cancelled_icon_miss_does_not_change_phase(self):
+        for reactivate in (False, True):
+            with self.subTest(reactivate=reactivate):
+                self.state.freebies_enabled = True
+                self.feature._detected_generation = self.feature._activation_generation
+
+                def match(*args, **kwargs):
+                    if self.state.freebies_enabled:
+                        self.feature.toggle()
+                        if reactivate:
+                            self.feature.toggle()
+                            self.feature._detected_generation = self.feature._activation_generation
+                    return {"found": False, "score": .1}
+
+                self.feature.find_template.side_effect = match
+                self.assertFalse(self.feature._run_claim_cycle())
+                self.assertEqual(self.feature._check_interval(), 2700)
+                self.feature.tap.assert_not_called()
 
     def test_second_icon_also_switches_before_failed_tap_without_counting(self):
         self.feature.find_template.side_effect = [{"found": False, "score": .1}, self.hit]

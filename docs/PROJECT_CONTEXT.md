@@ -62,11 +62,14 @@ lazy imports to avoid circular imports. Level detection writes
   (default 300 seconds) until either available-icon template is detected.
   The first detection immediately selects `FREEBIES_CHECK_INTERVAL_S_SLOW`
   (default 2700 seconds / 45 minutes), even if the subsequent claim fails.
-  Missing screenshots and misses do not change the phase; later misses retain
-  SLOW. Restart or reactivation resets to FIRST. The countdown uses the chosen
+  A scan without either available icon returns to FIRST (fast checks) until
+  the next detection selects SLOW again. Missing screenshots do not change
+  the phase; cancelled or older activation scans cannot reset it.
+  Restart or reactivation resets to FIRST. The countdown uses the chosen
   delay; game-absent retries remain capped at 30 seconds. Freebies still waits
   for the shared action lock. Logs show startup intervals, FIRST on activation,
-  the first detection's SLOW transition, action-lock waits and next-check delay,
+  transitions to FIRST after icon misses and to SLOW after detection,
+  action-lock waits and next-check delay,
   mode and reason (`ok`, `no_game`), routed via `FREEBIES_LOG_LEVEL` (default
   TXT, file only). Claim accounting and statistics activation are unchanged.
   Both intervals are editable in the WebUI and require a process restart.

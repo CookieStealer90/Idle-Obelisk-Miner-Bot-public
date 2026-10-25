@@ -55,8 +55,9 @@ test('Freebie-Gems FIRST and SLOW controls explain phases and save numeric secon
     FREEBIES_CHECK_INTERVAL_S_SLOW:2700}};renderSettings(settingsData);saveSettings();`,context);
   assert.match(container.innerHTML,/cfg-freebies-FREEBIES_CHECK_INTERVAL_S_FIRST/);
   assert.match(container.innerHTML,/cfg-freebies-FREEBIES_CHECK_INTERVAL_S_SLOW/);
-  assert.match(container.innerHTML,/startup or activation/);
-  assert.match(container.innerHTML,/slow mode until restart or reactivation/);
+  assert.match(container.innerHTML,/fast scans after startup, activation or a scan without either available Freebie-Gems icon/);
+  assert.match(container.innerHTML,/returns to FIRST \(fast checks\)/);
+  assert.match(container.innerHTML,/Missing screenshots do not change the phase/);
   assert.match(container.innerHTML,/2700 s \(45 minutes\)/);
   assert.deepEqual(saved.freebies,{FREEBIES_CHECK_INTERVAL_S_FIRST:90,
     FREEBIES_CHECK_INTERVAL_S_SLOW:2700});

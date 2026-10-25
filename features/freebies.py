@@ -4,7 +4,7 @@ Periodically checks whether a freebie is claimable and clicks through the
 claim flow.
 
 Flow (see README / chat spec):
-    1. Use FIRST until the first detection, then SLOW until restart/reactivation.
+    1. Use FIRST for fast scans; detection selects SLOW, an icon miss resets FIRST.
     2. Verify game is running. If not, skip this tick.
     3. Pull a fresh screenshot into temp/freebie_scr.png.
     4. Match `freebie_full.png` inside FREEBIES_DETECT_ROI on the base screen.
@@ -140,6 +140,10 @@ def _run_claim_cycle() -> bool:
             which = "full2"
         else:
             _log(f"[FREEBIES] nothing to claim (full={m['score']:.3f} full2={m2['score']:.3f} thr={thr})")
+            if _cycle_active(generation) and _detected_generation == generation:
+                _detected_generation = None
+                _log(f"[FREEBIES] no freebie detected -> mode=FIRST "
+                     f"(fast checks, interval={_check_interval():g}s)")
             return False
 
     if not _cycle_active(generation):

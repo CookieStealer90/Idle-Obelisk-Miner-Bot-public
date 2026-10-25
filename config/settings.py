@@ -89,8 +89,8 @@ RUNNING_LOG_LEVEL = "TXT"
 
 # ========= Freebies feature =========
 FREEBIES_ENABLED_DEFAULT = False
-FREEBIES_CHECK_INTERVAL_S_FIRST = 300.0  # startup/activation until first detection
-FREEBIES_CHECK_INTERVAL_S_SLOW = 2700.0  # 45 min after first detection
+FREEBIES_CHECK_INTERVAL_S_FIRST = 300.0  # fast scans at startup/activation and after an icon miss
+FREEBIES_CHECK_INTERVAL_S_SLOW = 2700.0  # 45 min after detection until an icon miss
 
 FREEBIES_FULL_TEMPLATE = "freebie/freebie_full.png"
 FREEBIES_FULL2_TEMPLATE = "freebie/freebie_full2.png"

@@ -38,7 +38,7 @@ The bot uses Android screenshots, fixed screen regions and OpenCV template match
 
 | Feature | What it does |
 | --- | --- |
-| **Freebies** | Detects available Freebie icons, opens the menu, scrolls to the claim button, claims and closes the menu. Uses separate initial and long-term scan intervals. |
+| **Freebies** | Detects available Freebie icons, opens the menu, scrolls to the claim button, claims and closes the menu. Uses fast scans until detection and returns to fast scans after an available-icon miss. |
 | **Lootbug** | Detects a Lootbug and taps the Buy box using the bonus selection remembered by the game. Retries obscured or still-visible Buy boxes within a configured limit. |
 | **Founders Bundle** | Independently detects and taps Founders lootboxes, checking a fresh screenshot after each tap to handle consecutive bundles. Enable only if you own the bundle. |
 | **Notices** | Saves an image of a supported game notice before dismissal, with a persistent inbox for review and acknowledgement. |
@@ -115,7 +115,7 @@ ROIs use **`x1, y1, x2, y2`**, in Android screen pixels. Thresholds are match sc
 
 ### Feature-specific setup
 
-- **Freebies:** the default initial interval is 300 seconds. The first available-icon detection switches to 2700 seconds, even if the subsequent claim fails. Restart or reactivation resets the phase. Set `FREEBIES_DIAMONDS_PER_CLAIM` to your expected reward; statistics use this amount.
+- **Freebies:** the default initial interval is 300 seconds. The first available-icon detection switches to 2700 seconds, even if the subsequent claim fails. A later scan without either available icon returns to fast checks (300 seconds by default) until the next detection. Missing screenshots do not change the phase. Restart or reactivation resets the phase. Set `FREEBIES_DIAMONDS_PER_CLAIM` to your expected reward; statistics use this amount.
 - **Lootbug:** while automation is OFF, choose your bonuses in the game and confirm with **Buy**. The game remembers that selection. Enable **Remove lootbug gem confirmation** before enabling automation. The bot does not select bonuses. It checks a fresh image for Buy-box disappearance after a tap, retries within a limit and never automatically closes the dialog. Due or pending enabled Founders checks take priority.
 - **Founders:** initial scans default to 180 seconds; a detection switches to 3000 seconds. A later regular scan without a bundle returns to fast 180-second checks until the next detection. Fresh rechecks handle up to three taps per cycle by default; remaining bundles use a short retry. Its switch and schedule are independent of Lootbug.
 - **Notices:** supported frames are matched without reading their text. The default regular interval is 45 minutes with ±15% variance. Saving must succeed before dismissal. A full archive stops further saves and taps rather than deleting unread images.
