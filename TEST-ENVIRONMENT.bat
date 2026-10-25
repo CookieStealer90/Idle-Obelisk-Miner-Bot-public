@@ -11,7 +11,7 @@ echo   Missing paths are OK. This script only checks what exists. [cite: 2]
 echo.
 
 REM ============================================================
-REM 1) Find working Python with OpenCV (cv2) — avoid Python 3.14
+REM 1) Find working Python with OpenCV (cv2), including Python 3.14
 REM ============================================================
 echo [1/5] Finding a working Python with OpenCV (cv2)... [cite: 3]
 
@@ -22,7 +22,7 @@ if exist "%~dp0.venv\Scripts\python.exe" (
     goto :PY_FOUND
 )
 
-for %%V in (3.13 3.12 3.11 3.10) do (
+for %%V in (3.14 3.13 3.12 3.11 3.10) do (
     py -%%V -c "import sys" >nul 2>&1
     if not errorlevel 1 (
         py -%%V -c "import cv2" >nul 2>&1
@@ -33,10 +33,10 @@ for %%V in (3.13 3.12 3.11 3.10) do (
     )
 )
 
-REM Fallback: python.exe on PATH (reject 3.14)
+REM Fallback: python.exe on PATH (require Python 3.10 or newer)
 python -c "import sys; exit(0)" >nul 2>&1
 if not errorlevel 1 (
-    python -c "import sys; exit(0 if sys.version_info[:2]!=(3,14) else 1)" >nul 2>&1
+    python -c "import sys; exit(0 if sys.version_info[:2]>=(3,10) else 1)" >nul 2>&1
     if not errorlevel 1 (
         python -c "import cv2" >nul 2>&1
         if not errorlevel 1 (

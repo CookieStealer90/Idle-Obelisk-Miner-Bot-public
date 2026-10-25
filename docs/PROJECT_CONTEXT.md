@@ -229,9 +229,11 @@ disabled states, compact times and tooltip details without game access.
 ## Technologies, Startup and Configuration
 
 - Python 3.10+ according to the type annotation syntax used.
-  The README recommends 3.10-3.13; its Python 3.8 claim is not a reliable lower
-  bound. The initial inventory did not verify installed interpreter/package
-  versions; subsequent automated checks used the available local Python 3.10.
+  The README retains 3.10-3.13 as the existing setup recommendation. Windows CI
+  includes Python 3.10, 3.13 and 3.14; configured coverage alone does not confirm
+  successful CI runs or real-game compatibility. The initial inventory did not
+  verify installed interpreter/package versions; subsequent automated checks
+  used the available local Python 3.10.
 - `requirements.txt`: `opencv-python`, `flask>=3.0`, `flask-socketio>=5.3`,
   `pystray`, `pillow`, `pywin32`. NumPy is used directly but is not listed
   separately; OpenCV supplies it as a dependency.
@@ -387,7 +389,9 @@ Settings, logging and verification details: [Screenshots](SCREENSHOTS.md).
   A separate local emulator check confirmed six parallel slots, two competing
   requests for one slot and Run-template matching at 900 x 1600 pixels; it
   performed no game actions or bot starts.
-  `TEST-ENVIRONMENT.bat` checks dependencies and ADB, executes imports and writes
+  `TEST-ENVIRONMENT.bat` prefers the project's `.venv`, then searches `py`
+  versions 3.14 down to 3.10 and finally Python 3.10+ on `PATH`; Python 3.14 is
+  no longer excluded. It checks dependencies and ADB, executes imports and writes
   temporary files; it is neither a read-only check nor a feature regression
   test. `INSTALL-ENVIRONMENT.bat` installs packages.
 - `tools/calibrate_rainbow.py` analyzes existing images for calibration.

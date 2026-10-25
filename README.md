@@ -33,6 +33,7 @@ The bot uses Android screenshots, fixed screen regions and OpenCV template match
 - [Troubleshooting](#troubleshooting)
 - [Further documentation](#further-documentation)
 - [Limitations and responsible use](#limitations-and-responsible-use)
+- [License](#license)
 
 ## Features
 
@@ -224,7 +225,7 @@ Images survive browser and bot restarts until acknowledged. They live in `temp/n
 
 ## Requirements
 
-- **Windows** with Python **3.10+**. Python 3.10–3.13 is the existing setup recommendation; this does not imply every interpreter/package combination has been tested.
+- **Windows** with Python **3.10+**. Python 3.10–3.13 is the existing setup recommendation. Windows CI includes Python 3.10, 3.13 and 3.14; this does not imply every interpreter/package combination or real-game setup has been tested.
 - **ADB** from the emulator or on `PATH`.
 - Idle Obelisk Miner in an Android emulator; primary targets are **MEmu Android 9** and **MuMu Android 12**.
 - Packages from [`requirements.txt`](requirements.txt), including Flask, Flask-SocketIO, OpenCV, Pillow and tray integration.
@@ -246,7 +247,7 @@ Other devices or renderers may require calibration. The existing setup recommend
    py -3 tools/python_environment.py --install
    ```
 
-4. Optionally run `TEST-ENVIRONMENT.bat` to check dependencies and ADB. It prefers the project's `.venv`, performs imports, can contact ADB and writes temporary files; it is not a read-only regression test.
+4. Optionally run `TEST-ENVIRONMENT.bat` to check dependencies and ADB. It prefers the project's `.venv`, otherwise searches Python 3.14 down to 3.10 through `py`, then tries Python 3.10+ on `PATH`. It performs imports, can contact ADB and writes temporary files; it is not a read-only regression test.
 5. Run `StartWebUI.vbs` or `StartWebUI.bat` for tray operation. For a console session:
 
    ```powershell
@@ -357,3 +358,19 @@ Template matching searches fixed ROIs, level detection assembles digit templates
 A successful ADB command confirms input submission, not an in-game reward. Counters and configured gem estimates are not balance measurements. Lootbug's fresh Buy-box disappearance check is not independent reward verification. Real-game behavior depends on timing, layout, templates and the game version.
 
 This unofficial project is not affiliated with the game developer. Use at your own risk and in accordance with the game's rules. Input variation does not guarantee protection from detection or account restrictions.
+
+## License
+
+This project's original software is licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE.md).
+
+Required Notice: Copyright (c) 2026 CookieStealer90
+
+- Private and noncommercial use is permitted under the license, including personal hobby use without any anticipated commercial application.
+- You may modify and further develop the source code for purposes permitted by the license.
+- You may publish and redistribute modified versions free of charge for noncommercial purposes, subject to the license terms. Free distribution alone does not make a commercial purpose noncommercial.
+- Commercial use, sale and commercial marketing are not permitted without separate permission from the rights holder, except where the license expressly treats a use as a permitted purpose (including its Noncommercial Organizations provision).
+- When redistributing any part of the software, provide the license terms or their official URL and preserve all required copyright notices, including the Required Notice above.
+
+The license does not require you to publish your source code. This section is a summary; the full [license text](LICENSE.md) governs.
+
+Third-party libraries and services retain their own licenses and terms. Game artwork, screenshots, templates derived from the game and other third-party material remain subject to their respective owners' rights; this project license does not grant rights that the project author does not hold.
